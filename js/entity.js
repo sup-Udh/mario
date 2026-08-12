@@ -3,10 +3,10 @@
 		window.Mario = {};
 
 	var Entity = Mario.Entity = function(options) {
-	  this.vel = [0,0];
-	  this.acc = [0,0];
-		this.standing = true;
-	  this.pos = options.pos;
+	  this.vel = [0,0];  // speed of how fast mario is moving 
+	  this.acc = [0,0]; // acc of mario
+		this.standing = true; // on ground or not ground determination 
+	  this.pos = options.pos; // array containing x and y 
 	  this.sprite = options.sprite;
 	  this.hitbox = options.hitbox;
 	  this.left = false;

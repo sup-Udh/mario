@@ -90,12 +90,20 @@ function main() {
 }
 
 function update(dt) {
-  gameTime += dt;
+   
+    gameTime += dt;
 
-  handleInput(dt);
-  updateEntities(dt, gameTime);
+    // Let our AI decide what controls
+    // should be pressed this frame.
+    AIController.update();
 
-  checkCollisions();
+    // Existing Mario input system
+    // reads those AI controls.
+    handleInput(dt);
+
+    updateEntities(dt, gameTime);
+
+    checkCollisions();
 }
 
 function handleInput(dt) {
@@ -234,7 +242,12 @@ function render() {
   level.pipes.forEach (function(pipe) {
     renderEntity(pipe);
   });
+
+  MarioSensors.drawDebug(ctx, vX, vY);
+
 }
+
+
 
 function renderEntity(entity) {
   entity.render(ctx, vX, vY);

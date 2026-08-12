@@ -1,5 +1,7 @@
 (function() {
     var pressedKeys = {};
+    var aiKeys = {};
+
 
     function setKey(event, status) {
         var code = event.keyCode;
@@ -39,16 +41,32 @@
         pressedKeys = {};
     });
 
-    window.input = {
-        isDown: function(key) {
-            return pressedKeys[key.toUpperCase()];
-        },
-        reset: function() {
-          pressedKeys['RUN'] = false;
-          pressedKeys['LEFT'] = false;
-          pressedKeys['RIGHT'] = false;
-          pressedKeys['DOWN'] = false;
-          pressedKeys['JUMP'] = false;
-        }
-    };
+    // giving in controls form the ai model
+
+   window.input = {
+
+    isDown: function(key) {
+        key = key.toUpperCase();
+
+        return pressedKeys[key] || aiKeys[key];
+    },
+
+    setAI: function(key, status) {
+        aiKeys[key.toUpperCase()] = status;
+    },
+
+    resetAI: function() {
+        aiKeys = {};
+    },
+
+    reset: function() {
+        pressedKeys['RUN'] = false;
+        pressedKeys['LEFT'] = false;
+        pressedKeys['RIGHT'] = false;
+        pressedKeys['DOWN'] = false;
+        pressedKeys['JUMP'] = false;
+
+        aiKeys = {};
+    }
+};
 })();
