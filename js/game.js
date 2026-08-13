@@ -56,6 +56,9 @@ function init() {
     clear: new Audio('sounds/stage_clear.wav'),
     death: new Audio('sounds/mariodie.wav')
   };
+
+
+
   sounds = {
     smallJump: new Audio('sounds/jump-small.wav'),
     bigJump: new Audio('sounds/jump-super.wav'),
@@ -74,6 +77,35 @@ function init() {
   lastTime = Date.now();
   main();
 }
+
+function resetGameForAI() {
+
+    console.log("================================");
+    console.log("AI RESET");
+    console.log("================================");
+
+    // Stop current AI input
+    input.setAI('LEFT', false);
+    input.setAI('RIGHT', false);
+    input.setAI('JUMP', false);
+    input.setAI('RUN', false);
+
+    // Reset camera
+    vX = 0;
+    vY = 0;
+
+    // Clear projectiles
+    fireballs.length = 0;
+
+    // Recreate level and Mario
+    Mario.oneone();
+
+    // Make sure the episode starts fresh
+    MarioEpisode.active = false;
+
+    console.log("AI RESET COMPLETE");
+}
+
 
 var gameTime = 0;
 
@@ -95,7 +127,7 @@ function update(dt) {
 
     // Let our AI decide what controls
     // should be pressed this frame.
-    AIController.update();
+    AIController.update(dt);
 
     // Existing Mario input system
     // reads those AI controls.

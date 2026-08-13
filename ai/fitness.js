@@ -12,30 +12,22 @@ var MarioFitness  = {
     // Update fitness
     // --------------------------------------------------
 
-    update: function() {
+   update: function() {
 
-        // Make sure Mario exists
-        if (!player || !player.pos) {
-            return;
-        }
+    if (!player || !player.pos) {
+        return;
+    }
 
+    var marioX = player.pos[0];
 
-        var marioX = player.pos[0];
+    // Reward forward progress
+    if (marioX > this.maxX) {
+        this.maxX = marioX;
+    }
 
-
-        // Keep the furthest position reached
-        if (marioX > this.maxX) {
-
-            this.maxX = marioX;
-
-        }
-
-
-        // For now, fitness is simply
-        // the furthest X position.
-        this.fitness = this.maxX;
-
-    },
+    // Fitness is based on furthest distance reached
+    this.fitness = this.maxX;
+},
 
 
     // --------------------------------------------------

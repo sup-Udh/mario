@@ -2,31 +2,70 @@ var AIController = {
 
     debugTimer: 0,
 
-    // --------------------------------------------------
-    // Our neural network
-    //
-    // 5 inputs
-    // 8 hidden neurons
-    // 3 outputs
-    // --------------------------------------------------
+    network: null,
 
-    network: NeuralNetwork.create(5, 8, 3),
+    update: function(dt) {
+
+        // ----------------------------------------------
+        // Population
+        // ----------------------------------------------
+
+        if (
+            !AIPopulation.networks ||
+            AIPopulation.networks.length === 0
+        ) {
+            AIPopulation.create();
+        }
 
 
-    // --------------------------------------------------
-    // Called every game update
-    // --------------------------------------------------
+        // ----------------------------------------------
+        // Start episode
+        // ----------------------------------------------
 
-    update: function() {
-
-        if (!MarioEpisode.active && !player.dying) {
+        if (
+            !MarioEpisode.active &&
+            !MarioEpisode.resetPending &&
+            player &&
+            !player.dying
+        ) {
             MarioEpisode.start();
         }
 
 
-        // --------------------------------------------------
-        // Clear previous AI controls
-        // --------------------------------------------------
+        // ----------------------------------------------
+        // Don't control Mario while dying/resetting
+        // ----------------------------------------------
+
+        if (
+            !player ||
+            player.dying ||
+            MarioEpisode.resetPending
+        ) {
+            return;
+        }
+
+
+        // ----------------------------------------------
+        // Current network
+        // ----------------------------------------------
+
+        this.network =
+            AIPopulation.getCurrentNetwork();
+
+
+        if (!this.network) {
+
+            console.error(
+                "AIController: No neural network!"
+            );
+
+            return;
+        }
+
+
+        // ----------------------------------------------
+        // Clear controls
+        // ----------------------------------------------
 
         input.setAI('LEFT', false);
         input.setAI('RIGHT', false);
@@ -34,22 +73,39 @@ var AIController = {
         input.setAI('RUN', false);
 
 
-        // --------------------------------------------------
-        // Get the 5 inputs from Mario's sensors
-        // --------------------------------------------------
+        // ----------------------------------------------
+        // Sensors
+        // ----------------------------------------------
 
         var inputs =
             MarioInputs.getInputs();
 
 
+        // ----------------------------------------------
+        // Fitness
+        // ----------------------------------------------
+
         MarioFitness.update();
 
-        MarioEpisode.update();
+
+        // ----------------------------------------------
+        // Episode
+        // ----------------------------------------------
+
+        MarioEpisode.update(dt);
 
 
-        // --------------------------------------------------
-        // Run the neural network
-        // --------------------------------------------------
+        // Episode may have ended.
+        if (
+            !MarioEpisode.active
+        ) {
+            return;
+        }
+
+
+        // ----------------------------------------------
+        // Neural network
+        // ----------------------------------------------
 
         var outputs =
             NeuralNetwork.predict(
@@ -57,10 +113,6 @@ var AIController = {
                 inputs
             );
 
-
-        // --------------------------------------------------
-        // Read the three outputs
-        // --------------------------------------------------
 
         var leftScore =
             outputs[0];
@@ -72,57 +124,85 @@ var AIController = {
             outputs[2];
 
 
-        // --------------------------------------------------
-        // LEFT vs RIGHT
-        // --------------------------------------------------
+        // ----------------------------------------------
+        // Movement
+        // ----------------------------------------------
 
-        if (leftScore > rightScore) {
+        if (
+            leftScore >
+            rightScore
+        ) {
 
-            input.setAI('LEFT', true);
+            input.setAI(
+                'LEFT',
+                true
+            );
 
         } else {
 
-            input.setAI('RIGHT', true);
-
+            input.setAI(
+                'RIGHT',
+                true
+            );
         }
 
 
-        // --------------------------------------------------
-        // JUMP
-        // --------------------------------------------------
+        // ----------------------------------------------
+        // Jump
+        // ----------------------------------------------
 
-        if (jumpScore > 0.5) {
+        if (
+            jumpScore >
+            0.5
+        ) {
 
-            input.setAI('JUMP', true);
-
+            input.setAI(
+                'JUMP',
+                true
+            );
         }
 
 
-        // --------------------------------------------------
+        // ----------------------------------------------
         // Debug
-        // --------------------------------------------------
+        // ----------------------------------------------
 
         this.debugTimer++;
 
 
-        if (this.debugTimer % 30 === 0) {
+        if (
+            this.debugTimer %
+            30 ===
+            0
+        ) {
 
             console.log({
 
-                inputs: inputs,
+                network:
+                    AIPopulation.current + 1,
 
-                left: leftScore,
+                generation:
+                    AIPopulation.generation,
 
-                right: rightScore,
+                inputs:
+                    inputs,
 
-                jump: jumpScore,
+                left:
+                    leftScore,
 
-                fitness: MarioFitness.getFitness()
+                right:
+                    rightScore,
+
+                jump:
+                    jumpScore,
+
+                fitness:
+                    MarioFitness.getFitness(),
+
+                stuckTime:
+                    MarioEpisode.stuckTime
 
             });
-
         }
-
     }
-
 };

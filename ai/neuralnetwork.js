@@ -12,11 +12,9 @@ var NeuralNetwork = {
             hiddenCount: hiddenCount,
             outputCount: outputCount,
 
-            // We will store the weights here.
             weightsInputHidden: [],
             weightsHiddenOutput: [],
 
-            // Biases help the neurons make decisions.
             biasHidden: [],
             biasOutput: []
         };
@@ -73,6 +71,144 @@ var NeuralNetwork = {
 
             network.biasOutput[o] =
                 Math.random() * 2 - 1;
+        }
+
+
+        return network;
+    },
+
+
+    // --------------------------------------------------
+    // Make an exact copy of a network
+    // --------------------------------------------------
+
+    copy: function(original) {
+
+        var network = {
+
+            inputCount: original.inputCount,
+            hiddenCount: original.hiddenCount,
+            outputCount: original.outputCount,
+
+            weightsInputHidden: [],
+            weightsHiddenOutput: [],
+
+            biasHidden: [],
+            biasOutput: []
+        };
+
+
+        // ----------------------------------------------
+        // Copy Input -> Hidden weights
+        // ----------------------------------------------
+
+        for (var i = 0; i < original.inputCount; i++) {
+
+            network.weightsInputHidden[i] = [];
+
+            for (var h = 0; h < original.hiddenCount; h++) {
+
+                network.weightsInputHidden[i][h] =
+                    original.weightsInputHidden[i][h];
+            }
+        }
+
+
+        // ----------------------------------------------
+        // Copy Hidden -> Output weights
+        // ----------------------------------------------
+
+        for (var h = 0; h < original.hiddenCount; h++) {
+
+            network.weightsHiddenOutput[h] = [];
+
+            for (var o = 0; o < original.outputCount; o++) {
+
+                network.weightsHiddenOutput[h][o] =
+                    original.weightsHiddenOutput[h][o];
+            }
+        }
+
+
+        // ----------------------------------------------
+        // Copy hidden biases
+        // ----------------------------------------------
+
+        for (var h = 0; h < original.hiddenCount; h++) {
+
+            network.biasHidden[h] =
+                original.biasHidden[h];
+        }
+
+
+        // ----------------------------------------------
+        // Copy output biases
+        // ----------------------------------------------
+
+        for (var o = 0; o < original.outputCount; o++) {
+
+            network.biasOutput[o] =
+                original.biasOutput[o];
+        }
+
+
+        return network;
+    },
+
+
+    // --------------------------------------------------
+    // Mutate a network
+    // --------------------------------------------------
+
+    mutate: function(network, amount) {
+
+        // ----------------------------------------------
+        // Mutate Input -> Hidden weights
+        // ----------------------------------------------
+
+        for (var i = 0; i < network.inputCount; i++) {
+
+            for (var h = 0; h < network.hiddenCount; h++) {
+
+                network.weightsInputHidden[i][h] +=
+                    (Math.random() * 2 - 1) * amount;
+            }
+        }
+
+
+        // ----------------------------------------------
+        // Mutate Hidden -> Output weights
+        // ----------------------------------------------
+
+        for (var h = 0; h < network.hiddenCount; h++) {
+
+            for (var o = 0; o < network.outputCount; o++) {
+
+                network.weightsHiddenOutput[h][o] +=
+                    (Math.random() * 2 - 1) * amount;
+            }
+        }
+
+
+        // ----------------------------------------------
+        // Mutate hidden biases
+        // ----------------------------------------------
+
+        for (var h = 0; h < network.hiddenCount; h++) {
+
+            network.biasHidden[h] +=
+                (Math.random() * 2 - 1) * amount;
+        }
+
+
+        // ----------------------------------------------
+        // Mutate output biases
+        // ----------------------------------------------
+
+        for (var o = 0; o < network.outputCount; o++) {
+
+            network.biasOutput[o] +=
+                (Math.random() * 2 - 1) * amount;
         }
 
 
@@ -145,4 +281,5 @@ var NeuralNetwork = {
 
         return outputs;
     }
+
 };
