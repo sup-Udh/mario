@@ -359,6 +359,19 @@ var MarioEpisode = {
 
 
         // ----------------------------------------------
+        // Penalize dying. Running out of progress
+        // (stuck timeout) is not a death, so it stays
+        // unpenalized - the episode simply banks
+        // whatever fitness was earned up to that point.
+        // ----------------------------------------------
+
+        if (player && player.dying) {
+
+            MarioFitness.applyDeathPenalty();
+        }
+
+
+        // ----------------------------------------------
         // Get final fitness
         // ----------------------------------------------
 
