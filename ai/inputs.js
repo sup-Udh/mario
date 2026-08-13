@@ -1,19 +1,35 @@
 var MarioInputs = {
+
     getInputs: function() {
-        var obstacle = 
-        MarioSensors.obstacleDistance(10);
-        
-        var ground = MarioSensors.groundAhead();
 
-        var enemy = MarioSensors.enemyDistance(10);
+        // --------------------------------------------------
+        // Get sensor values
+        // --------------------------------------------------
 
-        var velocityX = player.vel[0];
-        var velocityY = player.vel[1];
+        var obstacle =
+            MarioSensors.obstacleDistance(10);
+
+        var ground =
+            MarioSensors.groundAhead();
+
+        var enemy =
+            MarioSensors.enemyDistance(10);
 
 
-        // -----------------------------
+        // --------------------------------------------------
+        // Get Mario velocity
+        // --------------------------------------------------
+
+        var velocityX =
+            player.vel[0];
+
+        var velocityY =
+            player.vel[1];
+
+
+        // --------------------------------------------------
         // Safety checks
-        // -----------------------------
+        // --------------------------------------------------
 
         if (!Number.isFinite(obstacle)) {
             obstacle = 10;
@@ -31,45 +47,76 @@ var MarioInputs = {
             velocityY = 0;
         }
 
-         // -----------------------------
-        // Normalize distances
-        // -----------------------------
+
+        // --------------------------------------------------
+        // Normalize obstacle distance
+        //
+        // 10 tiles → 1
+        // 5 tiles  → 0.5
+        // 1 tile   → 0.1
+        // --------------------------------------------------
 
         obstacle = obstacle / 10;
+
+
+        // --------------------------------------------------
+        // Normalize enemy distance
+        //
+        // 10 tiles → 1
+        // 5 tiles  → 0.5
+        // 1 tile   → 0.1
+        // --------------------------------------------------
 
         enemy = enemy / 10;
 
 
-         // Convert ground boolean
-        // -----------------------------
+        // --------------------------------------------------
+        // Convert ground boolean into a number
+        //
+        // true  → 1
+        // false → 0
+        // --------------------------------------------------
 
         ground = ground ? 1 : 0;
 
 
-        // -----------------------------
+        // --------------------------------------------------
         // Normalize horizontal velocity
         //
-        // Mario's approximate maximum
-        // horizontal speed is ±1.55
-        // -----------------------------
+        // Approximately:
+        //
+        // -1.55 → -1
+        //     0 →  0
+        // +1.55 → +1
+        // --------------------------------------------------
 
-        velocityX = velocityX / 1.55;
+       // Normalize horizontal velocity
+velocityX = velocityX / 1.56;
+
+// Keep between -1 and +1
+velocityX = Math.max(-1, Math.min(1, velocityX));
 
 
-        // -----------------------------
-        // Return neural-network inputs
-        // -----------------------------
+// Normalize vertical velocity
+velocityY = velocityY / 5.75;
 
-        
+// Keep between -1 and +1
+velocityY = Math.max(-1, Math.min(1, velocityY));
+
+        // --------------------------------------------------
+        // Return neural-network input vector
+        // --------------------------------------------------
 
         return [
+
             obstacle,
-            ground, 
+            ground,
             enemy,
             velocityX,
             velocityY
-        ]
+
+        ];
 
     }
 
-}
+};

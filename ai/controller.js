@@ -2,68 +2,127 @@ var AIController = {
 
     debugTimer: 0,
 
+    // --------------------------------------------------
+    // Our neural network
+    //
+    // 5 inputs
+    // 8 hidden neurons
+    // 3 outputs
+    // --------------------------------------------------
+
+    network: NeuralNetwork.create(5, 8, 3),
+
+
+    // --------------------------------------------------
+    // Called every game update
+    // --------------------------------------------------
+
     update: function() {
-// Clear AI controls
-input.setAI('LEFT', false);
-input.setAI('RIGHT', false);
-input.setAI('JUMP', false);
-input.setAI('RUN', false);
+
+        if (!MarioEpisode.active && !player.dying) {
+            MarioEpisode.start();
+        }
 
 
-// Temporary movement test
-// Switch direction every 2 seconds.
+        // --------------------------------------------------
+        // Clear previous AI controls
+        // --------------------------------------------------
 
-if (Math.floor(gameTime / 2) % 2 === 0) {
-
-    // Move right
-    input.setAI('RIGHT', true);
-
-} else {
-
-    // Move left
-    input.setAI('LEFT', true);
-}
-
-        // Sensor
-        var obstacleDistance =
-            MarioSensors.obstacleDistance(10);
-
-        var groundAhead = MarioSensors.groundAhead()
-        var enemyDistance = MarioSensors.enemyDistance(10)
-        var normalizationInputs = MarioInputs.getInputs();
+        input.setAI('LEFT', false);
+        input.setAI('RIGHT', false);
+        input.setAI('JUMP', false);
+        input.setAI('RUN', false);
 
 
-        // Debug every 30 frames
+        // --------------------------------------------------
+        // Get the 5 inputs from Mario's sensors
+        // --------------------------------------------------
+
+        var inputs =
+            MarioInputs.getInputs();
+
+
+        MarioFitness.update();
+
+        MarioEpisode.update();
+
+
+        // --------------------------------------------------
+        // Run the neural network
+        // --------------------------------------------------
+
+        var outputs =
+            NeuralNetwork.predict(
+                this.network,
+                inputs
+            );
+
+
+        // --------------------------------------------------
+        // Read the three outputs
+        // --------------------------------------------------
+
+        var leftScore =
+            outputs[0];
+
+        var rightScore =
+            outputs[1];
+
+        var jumpScore =
+            outputs[2];
+
+
+        // --------------------------------------------------
+        // LEFT vs RIGHT
+        // --------------------------------------------------
+
+        if (leftScore > rightScore) {
+
+            input.setAI('LEFT', true);
+
+        } else {
+
+            input.setAI('RIGHT', true);
+
+        }
+
+
+        // --------------------------------------------------
+        // JUMP
+        // --------------------------------------------------
+
+        if (jumpScore > 0.5) {
+
+            input.setAI('JUMP', true);
+
+        }
+
+
+        // --------------------------------------------------
+        // Debug
+        // --------------------------------------------------
+
         this.debugTimer++;
+
 
         if (this.debugTimer % 30 === 0) {
 
-
-            console.log({
-    velocityX: player.vel[0],
-    velocityY: player.vel[1]
-});
-
             console.log({
 
-                marioX: player.pos[0],
-                marioY: player.pos[1],
+                inputs: inputs,
 
-                velocityX: player.vel[0],
-                velocityY: player.vel[1],
+                left: leftScore,
 
-                obstacleDistance:
-                    obstacleDistance,
-                groundAhead:
-                    groundAhead,
-                enemyDistance: 
-                    enemyDistance,
-                inputsMario:
-                    normalizationInputs
+                right: rightScore,
 
+                jump: jumpScore,
+
+                fitness: MarioFitness.getFitness()
 
             });
+
         }
+
     }
 
 };
