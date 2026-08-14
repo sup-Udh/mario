@@ -402,6 +402,29 @@ var MarioEpisode = {
 
 
         // ----------------------------------------------
+        // Save raw distance (how far Mario actually
+        // got), separate from fitness.
+        // ----------------------------------------------
+
+        if (
+            AIPopulation &&
+            typeof AIPopulation.setCurrentDistance ===
+            "function"
+        ) {
+
+            AIPopulation.setCurrentDistance(
+                MarioFitness.maxX
+            );
+
+        } else {
+
+            console.error(
+                "AIPopulation.setCurrentDistance() is not available!"
+            );
+        }
+
+
+        // ----------------------------------------------
         // Debug
         // ----------------------------------------------
 

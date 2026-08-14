@@ -107,17 +107,121 @@ function resetGameForAI() {
 }
 
 
+// --------------------------------------------------
+// Training speed control
+//
+// Normally the loop is paced by real wall-clock time
+// (dt from Date.now()), so an AI episode takes as long
+// as it would for a human. Turbo mode instead runs
+// several fixed-dt simulation steps per animation
+// frame - physics stay identical (each step is still a
+// normal 1/60s tick), it just doesn't wait on the
+// display's real refresh rate to advance them.
+//
+// Tweak from the console any time:
+//   TRAINING.turbo = false        // watch it play live
+//   TRAINING.stepsPerFrame = 30   // go even faster
+// --------------------------------------------------
+
+var TRAINING = {
+
+    turbo: true,
+
+    stepsPerFrame: 10,
+
+    fixedDt: 1 / 60
+
+};
+
+console.log(
+    "Training mode:",
+    TRAINING.turbo ? "TURBO (" + TRAINING.stepsPerFrame + "x)" : "real-time"
+);
+
+
+// --------------------------------------------------
+// On-page training panel - a visible toggle so you can
+// flip between real-time playback and turbo/fast-forward
+// (plus adjust turbo speed) without touching devtools.
+// --------------------------------------------------
+
+function createTrainingPanel() {
+
+    var panel = document.createElement("div");
+    panel.id = "training-panel";
+
+    var toggleButton = document.createElement("button");
+    toggleButton.id = "turbo-toggle";
+
+    var speedInput = document.createElement("input");
+    speedInput.type = "range";
+    speedInput.min = "1";
+    speedInput.max = "60";
+    speedInput.value = TRAINING.stepsPerFrame;
+    speedInput.id = "turbo-speed";
+
+    var speedValue = document.createElement("span");
+    speedValue.id = "turbo-speed-value";
+
+    function refresh() {
+
+        toggleButton.textContent =
+            TRAINING.turbo ?
+                "Turbo ON  (click for real-time)" :
+                "Real-time  (click for turbo)";
+
+        speedInput.disabled = !TRAINING.turbo;
+
+        speedValue.textContent = TRAINING.stepsPerFrame + "x";
+    }
+
+    toggleButton.addEventListener("click", function() {
+        TRAINING.turbo = !TRAINING.turbo;
+        refresh();
+    });
+
+    speedInput.addEventListener("input", function() {
+        TRAINING.stepsPerFrame = parseInt(speedInput.value, 10);
+        refresh();
+    });
+
+    panel.appendChild(toggleButton);
+    panel.appendChild(speedInput);
+    panel.appendChild(speedValue);
+
+    document.body.appendChild(panel);
+
+    refresh();
+}
+
+createTrainingPanel();
+
+
 var gameTime = 0;
 
 //set up the game loop
 function main() {
-  var now = Date.now();
-  var dt = (now - lastTime) / 1000.0;
 
-  update(dt);
+  if (TRAINING.turbo) {
+
+    for (var i = 0; i < TRAINING.stepsPerFrame; i++) {
+      update(TRAINING.fixedDt);
+    }
+
+    lastTime = Date.now();
+
+  } else {
+
+    var now = Date.now();
+    var dt = (now - lastTime) / 1000.0;
+
+    update(dt);
+
+    lastTime = now;
+  }
+
   render();
 
-  lastTime = now;
   requestAnimFrame(main);
 }
 
@@ -277,10 +381,55 @@ function render() {
 
   MarioSensors.drawDebug(ctx, vX, vY);
 
+  renderTrainingHUD();
+
 }
 
 
 
 function renderEntity(entity) {
   entity.render(ctx, vX, vY);
+}
+
+
+// --------------------------------------------------
+// On-screen training HUD - shows generation/network
+// progress and how far Mario is getting, live, so you
+// don't have to watch the console to see it working.
+// --------------------------------------------------
+
+function renderTrainingHUD() {
+
+  if (typeof AIPopulation === 'undefined') {
+    return;
+  }
+
+  var currentDistance =
+    (typeof MarioFitness !== 'undefined') ? MarioFitness.maxX : 0;
+
+  var lines = [
+    "Gen " + AIPopulation.generation +
+      "   Net " + (AIPopulation.current + 1) + "/" + AIPopulation.size,
+    "Dist " + Math.floor(currentDistance) +
+      "   All-time best " + Math.floor(AIPopulation.bestDistanceEver || 0)
+  ];
+
+  ctx.save();
+
+  ctx.font = "8px monospace";
+  ctx.textBaseline = "top";
+
+  var boxWidth = 150;
+  var boxHeight = lines.length * 10 + 6;
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+  ctx.fillRect(4, 4, boxWidth, boxHeight);
+
+  ctx.fillStyle = "#ffffff";
+
+  lines.forEach(function(line, i) {
+    ctx.fillText(line, 8, 8 + i * 10);
+  });
+
+  ctx.restore();
 }

@@ -158,9 +158,20 @@ var NeuralNetwork = {
 
     // --------------------------------------------------
     // Mutate a network
+    //
+    // rate = probability that any individual weight/bias
+    // mutates at all (default 1 = mutate everything, the
+    // old behavior). Mutating only a fraction of the
+    // genome per child keeps most of what already works
+    // intact instead of redrawing the whole network.
     // --------------------------------------------------
 
-    mutate: function(network, amount) {
+    mutate: function(network, amount, rate) {
+
+        if (rate === undefined) {
+            rate = 1;
+        }
+
 
         // ----------------------------------------------
         // Mutate Input -> Hidden weights
@@ -170,8 +181,11 @@ var NeuralNetwork = {
 
             for (var h = 0; h < network.hiddenCount; h++) {
 
-                network.weightsInputHidden[i][h] +=
-                    (Math.random() * 2 - 1) * amount;
+                if (Math.random() < rate) {
+
+                    network.weightsInputHidden[i][h] +=
+                        (Math.random() * 2 - 1) * amount;
+                }
             }
         }
 
@@ -184,8 +198,11 @@ var NeuralNetwork = {
 
             for (var o = 0; o < network.outputCount; o++) {
 
-                network.weightsHiddenOutput[h][o] +=
-                    (Math.random() * 2 - 1) * amount;
+                if (Math.random() < rate) {
+
+                    network.weightsHiddenOutput[h][o] +=
+                        (Math.random() * 2 - 1) * amount;
+                }
             }
         }
 
@@ -196,8 +213,11 @@ var NeuralNetwork = {
 
         for (var h = 0; h < network.hiddenCount; h++) {
 
-            network.biasHidden[h] +=
-                (Math.random() * 2 - 1) * amount;
+            if (Math.random() < rate) {
+
+                network.biasHidden[h] +=
+                    (Math.random() * 2 - 1) * amount;
+            }
         }
 
 
@@ -207,8 +227,11 @@ var NeuralNetwork = {
 
         for (var o = 0; o < network.outputCount; o++) {
 
-            network.biasOutput[o] +=
-                (Math.random() * 2 - 1) * amount;
+            if (Math.random() < rate) {
+
+                network.biasOutput[o] +=
+                    (Math.random() * 2 - 1) * amount;
+            }
         }
 
 

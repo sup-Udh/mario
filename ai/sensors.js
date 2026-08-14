@@ -2,7 +2,16 @@ var MarioSensors = {
 
     TILE_SIZE: 16,
 
+    // How many tiles ahead to scan for a gap. Wider than 1
+    // tile on purpose: jump is only legal while Mario is
+    // still standing (see Player.jump()'s `vel[1] > 0`
+    // guard), so by the time he's ON the tile right before
+    // a pit, gravity locks jump out again within a single
+    // frame. A short lookahead gave the network almost no
+    // window to react in - this gives it several tiles of
+    // runway instead.
 
+    GROUND_LOOKAHEAD_TILES: 3,
 
 
     // gap below detection
@@ -16,22 +25,42 @@ var MarioSensors = {
 
     var marioY = Math.floor(player.pos[1] / this.TILE_SIZE)
 
-    var checkX = marioX + 1;
     var startY = marioY  + 1
 
-    // loing downward a few tiles
+    // Check every tile column between here and the lookahead
+    // distance. If ANY of them has no floor within the next
+    // 4 rows down, that's a gap coming up soon - report "no
+    // ground ahead" now instead of waiting until Mario is
+    // standing right on the edge of it.
 
     for (
-        var y = startY;
-        y < startY + 4;
-        y ++
+        var dx = 1;
+        dx <= this.GROUND_LOOKAHEAD_TILES;
+        dx ++
     ) {
-        if (this.isSolid(checkX, y)){
-            return true
+
+        var checkX = marioX + dx;
+        var foundGround = false;
+
+        // loing downward a few tiles
+
+        for (
+            var y = startY;
+            y < startY + 4;
+            y ++
+        ) {
+            if (this.isSolid(checkX, y)){
+                foundGround = true;
+                break;
+            }
+        }
+
+        if (!foundGround) {
+            return false;
         }
     }
 
-    return false 
+    return true;
 
     },
 

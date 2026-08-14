@@ -30,3 +30,29 @@ html {
   top: 0;
   left: 0;
 }
+
+#training-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.7);
+  font-family: monospace;
+  font-size: 12px;
+  color: #fff;
+  z-index: 10;
+}
+
+#training-panel button {
+  font-family: monospace;
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+#training-panel input[type="range"] {
+  vertical-align: middle;
+}

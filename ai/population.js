@@ -4,17 +4,59 @@ var AIPopulation = {
     // Population settings
     // --------------------------------------------------
 
-    size: 5,
+    size: 12,
 
     networks: [],
 
     fitness: [],
 
+    // Raw distance (MarioFitness.maxX) each network reached,
+    // kept separate from fitness since fitness also includes
+    // bonuses/penalties - this is purely "how far did it get."
+    distances: [],
+
+    // All-time furthest distance reached by any network,
+    // across every generation of this training run.
+    bestDistanceEver: 0,
+
     current: 0,
 
     generation: 1,
 
+
+    // --------------------------------------------------
+    // Evolution tuning
+    //
+    // eliteCount    - top performers copied unchanged
+    //                 into the next generation (guards
+    //                 against losing a good strategy,
+    //                 and keeps more than one alive so
+    //                 the whole population doesn't
+    //                 collapse onto a single lineage).
+    // freshCount    - brand-new random networks injected
+    //                 each generation, so a bad lineage
+    //                 always has a way out instead of
+    //                 just re-mutating the same mistake.
+    // mutationRate  - probability that any individual
+    //                 weight/bias mutates at all.
+    // mutationAmount/mutationDecay/minMutationAmount -
+    //                 mutation step size shrinks each
+    //                 generation (coarse exploration
+    //                 early, fine-tuning later) but
+    //                 never fully stops exploring.
+    // --------------------------------------------------
+
+    eliteCount: 2,
+
+    freshCount: 2,
+
+    mutationRate: 0.15,
+
     mutationAmount: 0.20,
+
+    mutationDecay: 0.98,
+
+    minMutationAmount: 0.02,
 
 
     // --------------------------------------------------
@@ -26,6 +68,10 @@ var AIPopulation = {
         this.networks = [];
 
         this.fitness = [];
+
+        this.distances = [];
+
+        this.bestDistanceEver = 0;
 
         this.current = 0;
 
@@ -44,6 +90,8 @@ var AIPopulation = {
             this.networks.push(network);
 
             this.fitness.push(0);
+
+            this.distances.push(0);
         }
 
 
@@ -78,6 +126,21 @@ var AIPopulation = {
 
         this.fitness[this.current] = value;
 
+    },
+
+
+    // --------------------------------------------------
+    // Store raw distance for current network, and track
+    // the all-time record across the whole training run.
+    // --------------------------------------------------
+
+    setCurrentDistance: function(value) {
+
+        this.distances[this.current] = value;
+
+        if (value > this.bestDistanceEver) {
+            this.bestDistanceEver = value;
+        }
     },
 
 
@@ -146,27 +209,59 @@ next: function() {
 
 
         // ----------------------------------------------
-        // Find best network
+        // Rank networks best -> worst
         // ----------------------------------------------
 
-        var bestIndex =
-            this.getBestIndex();
-
-        var bestFitness =
-            this.fitness[bestIndex];
-
-        var bestNetwork =
-            this.networks[bestIndex];
-
+        var ranked =
+            this.getRankedIndices();
 
         console.log(
             "Best network:",
-            bestIndex + 1
+            ranked[0] + 1
         );
 
         console.log(
             "Best fitness:",
-            bestFitness
+            this.fitness[ranked[0]]
+        );
+
+
+        // ----------------------------------------------
+        // One-line trend summary - easy to eyeball (or
+        // filter the console for "SUMMARY") across many
+        // generations without scrolling through the
+        // full per-episode logs.
+        // ----------------------------------------------
+
+        var fitnessSum = 0;
+
+        var distanceSum = 0;
+
+        var farthestThisGen = 0;
+
+        for (var s = 0; s < this.fitness.length; s++) {
+
+            fitnessSum += this.fitness[s];
+
+            distanceSum += this.distances[s] || 0;
+
+            if ((this.distances[s] || 0) > farthestThisGen) {
+                farthestThisGen = this.distances[s];
+            }
+        }
+
+        var avgFitness = fitnessSum / this.fitness.length;
+
+        var avgDistance = distanceSum / this.fitness.length;
+
+        console.log(
+            "SUMMARY | Gen " + this.generation +
+            " | best fitness " + this.fitness[ranked[0]].toFixed(1) +
+            " | avg fitness " + avgFitness.toFixed(1) +
+            " | farthest X this gen " + farthestThisGen.toFixed(1) +
+            " | avg X this gen " + avgDistance.toFixed(1) +
+            " | all-time best X " + this.bestDistanceEver.toFixed(1) +
+            " | mutation " + this.mutationAmount.toFixed(3)
         );
 
 
@@ -178,42 +273,85 @@ next: function() {
 
         var newFitness = [];
 
-
-        // ----------------------------------------------
-        // Keep the best network unchanged
-        // ----------------------------------------------
-
-        newNetworks.push(
-            NeuralNetwork.copy(bestNetwork)
-        );
-
-        newFitness.push(0);
+        var newDistances = [];
 
 
         // ----------------------------------------------
-        // Fill remaining population
-        // with mutated copies of the best
+        // Elites: keep the top performers unchanged so
+        // a good strategy is never lost, and more than
+        // one survives so the population doesn't
+        // collapse onto a single lineage.
         // ----------------------------------------------
 
         for (
-            var i = 1;
-            i < this.size;
-            i++
+            var e = 0;
+            e < this.eliteCount && e < ranked.length;
+            e++
         ) {
 
+            newNetworks.push(
+                NeuralNetwork.copy(
+                    this.networks[ranked[e]]
+                )
+            );
+
+            newFitness.push(0);
+
+            newDistances.push(0);
+        }
+
+
+        // ----------------------------------------------
+        // Fresh blood: brand-new random networks, so a
+        // bad lineage always has a way out instead of
+        // just re-mutating the same mistake forever.
+        // ----------------------------------------------
+
+        for (
+            var f = 0;
+            f < this.freshCount;
+            f++
+        ) {
+
+            newNetworks.push(
+                NeuralNetwork.create(5, 8, 3)
+            );
+
+            newFitness.push(0);
+
+            newDistances.push(0);
+        }
+
+
+        // ----------------------------------------------
+        // Fill the rest with mutated children of a
+        // randomly chosen elite parent.
+        // ----------------------------------------------
+
+        while (newNetworks.length < this.size) {
+
+            var eliteSlots =
+                Math.min(this.eliteCount, ranked.length);
+
+            var parentIndex =
+                ranked[Math.floor(Math.random() * eliteSlots)];
+
             var child =
-                NeuralNetwork.copy(bestNetwork);
+                NeuralNetwork.copy(this.networks[parentIndex]);
 
 
             NeuralNetwork.mutate(
                 child,
-                this.mutationAmount
+                this.mutationAmount,
+                this.mutationRate
             );
 
 
             newNetworks.push(child);
 
             newFitness.push(0);
+
+            newDistances.push(0);
         }
 
 
@@ -225,14 +363,33 @@ next: function() {
 
         this.fitness = newFitness;
 
+        this.distances = newDistances;
+
         this.current = 0;
 
         this.generation++;
 
 
+        // ----------------------------------------------
+        // Shrink the mutation step size a little every
+        // generation - coarse exploration early, finer
+        // tuning later - but never let it hit zero.
+        // ----------------------------------------------
+
+        this.mutationAmount = Math.max(
+            this.minMutationAmount,
+            this.mutationAmount * this.mutationDecay
+        );
+
+
         console.log(
             "Starting generation:",
             this.generation
+        );
+
+        console.log(
+            "Mutation amount now:",
+            this.mutationAmount
         );
 
         console.log(
@@ -242,6 +399,28 @@ next: function() {
         console.log(
             "================================"
         );
+    },
+
+
+    // --------------------------------------------------
+    // Rank network indices best -> worst by fitness
+    // --------------------------------------------------
+
+    getRankedIndices: function() {
+
+        var fitness = this.fitness;
+
+        var indices = [];
+
+        for (var i = 0; i < fitness.length; i++) {
+            indices.push(i);
+        }
+
+        indices.sort(function(a, b) {
+            return fitness[b] - fitness[a];
+        });
+
+        return indices;
     },
 
 

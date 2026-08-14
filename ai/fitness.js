@@ -43,6 +43,16 @@ var MarioFitness  = {
     jumpedThisAirtime: false,
 
 
+    // --------------------------------------------------
+    // Was there ground ahead the moment Mario left the
+    // ground this airtime? Captured at takeoff so it
+    // reflects what the network actually saw when it
+    // decided to jump (or not).
+    // --------------------------------------------------
+
+    groundAheadAtJump: true,
+
+
     reset: function() {
 
         this.maxX = 0;
@@ -52,6 +62,8 @@ var MarioFitness  = {
         this.passedEnemies = {};
 
         this.jumpedThisAirtime = false;
+
+        this.groundAheadAtJump = true;
     },
 
 
@@ -113,9 +125,14 @@ var MarioFitness  = {
 
 
     // --------------------------------------------------
-    // Small bonus for a jump that ends in landing
-    // safely (as opposed to jumping into a pit/enemy
-    // and dying mid-air, which never lands).
+    // Reward jumping specifically to clear a gap.
+    //
+    // - Jumping while groundAhead is false, then landing
+    //   safely, is a real pit-clear -> rewarded.
+    // - Jumping while groundAhead is true (flat ground)
+    //   earns nothing - that jump wasn't needed.
+    // - Falling off a ledge without jumping earns
+    //   nothing, whether or not it was over a gap.
     // --------------------------------------------------
 
     checkJump: function() {
@@ -125,16 +142,30 @@ var MarioFitness  = {
         }
 
         if (player.jumping) {
+
+            if (!this.jumpedThisAirtime) {
+
+                // First frame of this jump - record what
+                // the ground-ahead sensor read at takeoff.
+                this.groundAheadAtJump =
+                    MarioSensors.groundAhead();
+            }
+
             this.jumpedThisAirtime = true;
         }
 
         if (player.standing) {
 
-            if (this.jumpedThisAirtime) {
+            if (
+                this.jumpedThisAirtime &&
+                !this.groundAheadAtJump
+            ) {
                 this.bonus += this.jumpBonus;
             }
 
             this.jumpedThisAirtime = false;
+
+            this.groundAheadAtJump = true;
         }
     },
 
