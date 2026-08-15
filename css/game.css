@@ -4,31 +4,247 @@ html, body, ul, li {
   padding: 0;
 }
 
-canvas {
-  display: block;
-  width: 762;
-  margin: 0 auto;
-  background-color: blue;
-}
-
 p {
   text-align: center;
 }
 
-body {
-  overflow: hidden;
-  height: 100%;
-}
-
-html {
-  overflow: hidden;
-  height: 100%;
+html, body {
+  min-height: 100%;
+  background: #12121a;
+  color: #e8e8f0;
+  font-family: monospace;
 }
 
 .info {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #9aa;
+}
+
+.info a {
+  color: #7cf;
+}
+
+
+/* --------------------------------------------------
+   Showcase - the champion's own screen
+   -------------------------------------------------- */
+
+#showcase {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 6px;
+  background: #12121a;
+}
+
+#showcase-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 4px;
+  font-size: 12px;
+}
+
+#showcase-title {
+  color: #ffd76a;
+  font-weight: bold;
+}
+
+#showcase-fullscreen {
+  font-family: monospace;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+#showcase-stage {
+  position: relative;
+  width: 100%;
+  max-width: 768px;
+  margin: 0 auto;
+  line-height: 0;
+}
+
+.showcase-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  background-color: #7974FF;
+  border: 2px solid #ffd76a;
+}
+
+/* Fullscreen: fill the screen, keep the pixels crisp. */
+#showcase:fullscreen {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: none;
+  width: 100vw;
+  height: 100vh;
+}
+
+#showcase:fullscreen #showcase-stage {
+  max-width: none;
+  width: 100vw;
+}
+
+#showcase:fullscreen .showcase-canvas {
+  max-width: none;
+  width: 100vw;
+  height: auto;
+  max-height: 90vh;
+  object-fit: contain;
+  border: 0;
+}
+
+/* Bigger, still crisp, when blown up to the whole screen. */
+#showcase:fullscreen .showcase-hud {
+  font-size: 18px;
+  padding: 10px 14px;
+  border-radius: 4px;
+}
+
+
+/* --------------------------------------------------
+   Per-viewport HUD
+
+   A DOM overlay, deliberately NOT canvas text: the
+   canvas is 256x240 and gets upscaled 3x in the grid
+   (far more in fullscreen) with pixelated rendering,
+   which shreds small glyphs. DOM text renders at native
+   device resolution and stays sharp at any zoom.
+   -------------------------------------------------- */
+
+.env-hud {
   position: absolute;
-  top: 0;
-  left: 0;
+  top: 4px;
+  left: 4px;
+  z-index: 2;
+  padding: 3px 5px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-family: monospace;
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: pre;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  border-left: 2px solid #666;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.env-hud.running  { border-left-color: #4c8; }
+.env-hud.dead     { border-left-color: #e55; }
+.env-hud.stuck    { border-left-color: #ea4; }
+.env-hud.finished { border-left-color: #7cf; }
+
+/* Keeps the status colour from .env-hud.<status>, just larger. */
+.showcase-hud {
+  top: 8px;
+  left: 8px;
+  font-size: 13px;
+  padding: 6px 9px;
+  border-left-width: 3px;
+}
+
+
+/* --------------------------------------------------
+   Ten Mario viewports
+   -------------------------------------------------- */
+
+#env-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  padding: 6px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.env-cell {
+  position: relative;
+  line-height: 0;
+}
+
+.env-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  background-color: #7974FF;
+  border: 1px solid #2a2a3a;
+}
+
+@media (max-width: 1000px) {
+  #env-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+
+/* --------------------------------------------------
+   Training dashboard
+   -------------------------------------------------- */
+
+#training-dashboard {
+  padding: 8px 12px;
+  background: #1b1b26;
+  border-bottom: 1px solid #2a2a3a;
+  font-size: 12px;
+}
+
+.dash-perf {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #2a2a3a;
+  color: #8a8aa0;
+}
+
+.dash-perf b {
+  color: #7ce8a0;
+}
+
+.dash-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding-bottom: 8px;
+}
+
+.dash-main b {
+  color: #7cf;
+}
+
+.dash-envs {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 4px;
+}
+
+.env-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 6px;
+  background: #23232f;
+  border-left: 3px solid #444;
+  font-size: 11px;
+}
+
+.env-stat.running  { border-left-color: #4c8; }
+.env-stat.dead     { border-left-color: #e55; }
+.env-stat.stuck    { border-left-color: #ea4; }
+.env-stat.finished { border-left-color: #7cf; }
+
+@media (max-width: 1000px) {
+  .dash-envs {
+    grid-template-columns: repeat(5, 1fr);
+  }
 }
 
 #training-panel {

@@ -2,18 +2,13 @@
 
     // --------------------------------------------------
     // Human keyboard controls
+    //
+    // Shared across every environment on purpose: there is
+    // only one physical keyboard, so manual play always
+    // drives whichever environment is currently active.
     // --------------------------------------------------
 
     var pressedKeys = {};
-
-
-    // --------------------------------------------------
-    // AI controls
-    //
-    // The neural network/controller will use this.
-    // --------------------------------------------------
-
-    var aiKeys = {};
 
 
     // --------------------------------------------------
@@ -65,117 +60,175 @@
     }
 
 
+    if (typeof document !== 'undefined') {
+
+        // ----------------------------------------------
+        // Keyboard pressed
+        // ----------------------------------------------
+
+        document.addEventListener('keydown', function(e) {
+
+            setKey(e, true);
+
+        });
+
+
+        // ----------------------------------------------
+        // Keyboard released
+        // ----------------------------------------------
+
+        document.addEventListener('keyup', function(e) {
+
+            setKey(e, false);
+
+        });
+    }
+
+
+    if (typeof window !== 'undefined') {
+
+        // ----------------------------------------------
+        // Clear keyboard controls when the window
+        // loses focus.
+        // ----------------------------------------------
+
+        window.addEventListener('blur', function() {
+
+            pressedKeys = {};
+
+        });
+    }
+
+
     // --------------------------------------------------
-    // Keyboard pressed
+    // Input factory
+    //
+    // Each environment needs its OWN set of AI keys -
+    // otherwise ten networks would all write into one
+    // shared key bank and control each other's Mario.
+    // The human keyboard stays shared (see above).
     // --------------------------------------------------
 
-    document.addEventListener('keydown', function(e) {
+    function createInput(acceptHuman) {
 
-        setKey(e, true);
+        // AI controls, private to this input object.
+        var aiKeys = {};
 
-    });
+
+        return {
+
+            // ------------------------------------------
+            // Does this input listen to the keyboard?
+            //
+            // Off for AI environments. The keyboard is a
+            // single shared device, so if every
+            // environment listened to it, one arrow key
+            // would drive all ten Marios at once. Manual
+            // play turns this on for exactly one
+            // environment.
+            // ------------------------------------------
+
+            humanEnabled: !!acceptHuman,
+
+            // ------------------------------------------
+            // Check whether a key is currently pressed.
+            //
+            // It checks BOTH:
+            //
+            // 1. Human keyboard
+            // 2. AI controls
+            //
+            // If either one is true, the key is
+            // considered down.
+            // ------------------------------------------
+
+            isDown: function(key) {
+
+                key = key.toUpperCase();
+
+                return (
+                    (this.humanEnabled && pressedKeys[key]) ||
+                    aiKeys[key]
+                );
+
+            },
+
+
+            // ------------------------------------------
+            // AI presses/releases a key.
+            //
+            // Example:
+            //
+            // input.setAI('RIGHT', true);
+            //
+            // means:
+            // "AI is pressing RIGHT."
+            // ------------------------------------------
+
+            setAI: function(key, status) {
+
+                key = key.toUpperCase();
+
+                aiKeys[key] = status;
+
+            },
+
+
+            // ------------------------------------------
+            // Clear all AI controls.
+            // ------------------------------------------
+
+            resetAI: function() {
+
+                aiKeys = {};
+
+            },
+
+
+            // ------------------------------------------
+            // Reset everything.
+            //
+            // Called by Player.die(). Clears the shared
+            // human keys too, matching the original
+            // single-player behavior.
+            // ------------------------------------------
+
+            reset: function() {
+
+                pressedKeys['RUN'] = false;
+                pressedKeys['LEFT'] = false;
+                pressedKeys['RIGHT'] = false;
+                pressedKeys['DOWN'] = false;
+                pressedKeys['JUMP'] = false;
+
+                aiKeys = {};
+
+            }
+
+        };
+    }
 
 
     // --------------------------------------------------
-    // Keyboard released
+    // Public factory, used by MarioEnvironment.
     // --------------------------------------------------
 
-    document.addEventListener('keyup', function(e) {
+    var scope =
+        (typeof window !== 'undefined') ? window : globalThis;
 
-        setKey(e, false);
-
-    });
-
-
-    // --------------------------------------------------
-    // Clear keyboard controls when the window
-    // loses focus.
-    // --------------------------------------------------
-
-    window.addEventListener('blur', function() {
-
-        pressedKeys = {};
-
-    });
-
-
-    // --------------------------------------------------
-    // Public input object
-    // --------------------------------------------------
-
-    window.input = {
-
-
-        // --------------------------------------------------
-        // Check whether a key is currently pressed.
-        //
-        // It checks BOTH:
-        //
-        // 1. Human keyboard
-        // 2. AI controls
-        //
-        // If either one is true, the key is considered down.
-        // --------------------------------------------------
-
-        isDown: function(key) {
-
-            key = key.toUpperCase();
-
-            return (
-                pressedKeys[key] ||
-                aiKeys[key]
-            );
-
-        },
-
-
-        // --------------------------------------------------
-        // AI presses/releases a key.
-        //
-        // Example:
-        //
-        // input.setAI('RIGHT', true);
-        //
-        // means:
-        // "AI is pressing RIGHT."
-        // --------------------------------------------------
-
-        setAI: function(key, status) {
-
-            key = key.toUpperCase();
-
-            aiKeys[key] = status;
-
-        },
-
-
-        // --------------------------------------------------
-        // Clear all AI controls.
-        // --------------------------------------------------
-
-        resetAI: function() {
-
-            aiKeys = {};
-
-        },
-
-
-        // --------------------------------------------------
-        // Reset everything.
-        // --------------------------------------------------
-
-        reset: function() {
-
-            pressedKeys['RUN'] = false;
-            pressedKeys['LEFT'] = false;
-            pressedKeys['RIGHT'] = false;
-            pressedKeys['DOWN'] = false;
-            pressedKeys['JUMP'] = false;
-
-            aiKeys = {};
-
-        }
-
+    scope.MarioInput = {
+        create: createInput
     };
+
+
+    // --------------------------------------------------
+    // Default global input object.
+    //
+    // Keyboard-enabled, so any code that still refers to
+    // the bare `input` global behaves exactly as it did
+    // in the original single-player game.
+    // --------------------------------------------------
+
+    scope.input = createInput(true);
 
 })();
