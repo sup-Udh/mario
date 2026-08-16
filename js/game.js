@@ -376,14 +376,136 @@ function init() {
   makeAudioSafe(music);
   makeAudioSafe(sounds);
 
-  buildEnvironments();
+  // Nothing is built until the resume question is
+  // answered - the answer decides which brain every
+  // environment starts from.
+  askToResume(function(resume) {
 
-  lastTime = Date.now();
-  main();
+    buildEnvironments(resume);
+
+    lastTime = Date.now();
+    main();
+  });
 }
 
 
-function buildEnvironments() {
+// --------------------------------------------------
+// Resume or start over?
+//
+// Asked on every load that has something to resume
+// from. With no saved run there is nothing to choose
+// between, so the question is skipped rather than
+// offering to load a network that does not exist.
+//
+// Answering "start fresh" archives the outgoing
+// champion rather than deleting it - see
+// AITrainer.archiveBestNetwork.
+// --------------------------------------------------
+
+function askToResume(done) {
+
+  var info = AITrainer.savedRunInfo();
+
+  if (!info) {
+    console.log("No saved run in this browser - starting fresh.");
+    done(true);
+    return;
+  }
+
+
+  var overlay = document.createElement("div");
+  overlay.id = "resume-overlay";
+
+  var card = document.createElement("div");
+  card.className = "resume-card";
+
+  var when = info.savedAt ?
+    info.savedAt.toLocaleString() :
+    "unknown date";
+
+  var detail =
+    info.usable ?
+      '<dl class="resume-facts">' +
+        '<div><dt>Generation</dt><dd>' + info.generation + '</dd></div>' +
+        '<div><dt>Best fitness</dt><dd>' +
+          Math.floor(info.fitness) + '</dd></div>' +
+        '<div><dt>Saved</dt><dd>' + when + '</dd></div>' +
+      '</dl>' +
+      (info.staleScore ?
+        '<p class="resume-warn">Scored under an older fitness function - ' +
+        'the network is kept, its score is re-established on the first ' +
+        'generation.</p>' : '') :
+      '<p class="resume-warn">The saved network does not match the ' +
+      'current network shape and cannot be loaded. Starting fresh is ' +
+      'the only option.</p>';
+
+  card.innerHTML =
+    '<h2>Trained brain found</h2>' +
+    '<p class="resume-lead">Continue this run, or start evolution over ' +
+      'from random networks?</p>' +
+    detail +
+    '<div class="resume-actions">' +
+      '<button id="resume-yes"' + (info.usable ? '' : ' disabled') + '>' +
+        'Resume training</button>' +
+      '<button id="resume-no" class="secondary">Start fresh</button>' +
+    '</div>' +
+    '<p class="resume-note">Starting fresh archives the current champion ' +
+      'instead of deleting it. Recover it from the console with ' +
+      '<code>AITrainer.listArchives()</code>.</p>';
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+
+  var answered = false;
+
+  function answer(resume) {
+
+    if (answered) {
+      return;
+    }
+
+    answered = true;
+
+    document.removeEventListener('keydown', onKey);
+
+    if (overlay.parentNode) {
+      overlay.parentNode.removeChild(overlay);
+    }
+
+    done(resume);
+  }
+
+  function onKey(e) {
+
+    if (e.key === 'Enter' && info.usable) {
+      answer(true);
+    } else if (e.key === 'Escape') {
+      answer(false);
+    }
+  }
+
+  card.querySelector('#resume-yes')
+    .addEventListener('click', function() { answer(true); });
+
+  card.querySelector('#resume-no')
+    .addEventListener('click', function() { answer(false); });
+
+  document.addEventListener('keydown', onKey);
+
+  // Enter should confirm the safe choice without the
+  // user having to aim at anything.
+  var yes = card.querySelector('#resume-yes');
+
+  if (info.usable) {
+    yes.focus();
+  } else {
+    card.querySelector('#resume-no').focus();
+  }
+}
+
+
+function buildEnvironments(resume) {
 
   var surfaces = [];
 
@@ -393,7 +515,7 @@ function buildEnvironments() {
 
   AITrainer.environmentCount = ENVIRONMENT_COUNT;
 
-  AITrainer.init(surfaces);
+  AITrainer.init(surfaces, { resume: resume !== false });
 
   AITrainer.initShowcase(createShowcaseSurface());
 

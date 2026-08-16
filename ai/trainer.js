@@ -95,6 +95,12 @@
 
         mutationAmount: 0.35,
 
+        // The value mutationAmount decays FROM. Kept
+        // separately because mutationAmount is live state -
+        // starting a fresh run has to put it back, and by
+        // then the original is long gone.
+        initialMutationAmount: 0.35,
+
         mutationDecay: 0.98,
 
         minMutationAmount: 0.02,
@@ -166,16 +172,29 @@
 
         checkpointPrefix: 'mario_ai_checkpoint_',
 
+        // Champions displaced by a "start fresh" choice.
+        archivePrefix: 'mario_ai_archive_',
+
         generationsPerSave: 200,
 
         maxCheckpoints: 3,
+
+        maxArchives: 5,
 
 
         // ==========================================
         // Setup
         // ==========================================
 
-        init: function(surfaces) {
+        // options.resume === false starts a brand-new run
+        // even when a saved champion exists. Anything else
+        // resumes if there is something to resume from.
+
+        init: function(surfaces, options) {
+
+            options = options || {};
+
+            var resume = (options.resume !== false);
 
             this.environments = [];
 
@@ -184,7 +203,7 @@
             // Master network: resume if we can.
             // --------------------------------------
 
-            var saved = this.loadBestNetwork();
+            var saved = resume ? this.loadBestNetwork() : null;
 
             if (saved) {
 
@@ -215,15 +234,44 @@
 
             } else {
 
+                // Starting over by request means the saved
+                // champion is about to be overwritten: the
+                // very first generation will beat a record
+                // of 0 and trigger a save. Archive it first
+                // so choosing "start fresh" can never cost
+                // someone a brain they spent hours on.
+                if (!resume) {
+                    this.archiveBestNetwork();
+                }
+
                 this.masterNetwork = NeuralNetwork.create(
                     INPUT_COUNT,
                     HIDDEN_COUNT,
                     OUTPUT_COUNT
                 );
 
+                // Every piece of live state has to go back
+                // to its starting value, not just the
+                // network - init() can be called on a
+                // trainer that has already run.
+                this.generation = 1;
+
+                this.bestFitnessEver = 0;
+
+                this.bestFitnessThisGen = 0;
+
+                this.averageFitness = 0;
+
+                this.mutationAmount = this.initialMutationAmount;
+
+                this.history = [];
+
                 console.log(
-                    "No saved network found.\n" +
-                    "Creating new master network."
+                    resume ?
+                        "No saved network found.\n" +
+                        "Creating new master network." :
+                        "Starting a fresh run.\n" +
+                        "Any previous champion has been archived."
                 );
             }
 
@@ -806,6 +854,60 @@
         },
 
 
+        // ------------------------------------------
+        // What is in storage, for display only.
+        //
+        // Deliberately does NOT validate or migrate - the
+        // resume dialog needs to describe the save as it
+        // actually is, including a shape that will turn out
+        // to be unusable. Returns null when there is
+        // nothing to resume from.
+        // ------------------------------------------
+
+        savedRunInfo: function() {
+
+            var store = this.storage();
+
+            if (!store) {
+                return null;
+            }
+
+            try {
+
+                var raw = store.getItem(this.storageKey);
+
+                if (!raw) {
+                    return null;
+                }
+
+                var data = JSON.parse(raw);
+
+                if (!data || !data.network) {
+                    return null;
+                }
+
+                return {
+                    generation: data.generation || 1,
+                    fitness: data.fitness || 0,
+                    savedAt: data.timestamp ? new Date(data.timestamp) : null,
+
+                    // A save from an older fitness function
+                    // keeps its brain but loses its score,
+                    // and the dialog should say so rather
+                    // than promise a record it will drop.
+                    staleScore:
+                        data.scoringVersion !== MarioFitness.scoringVersion,
+
+                    usable: !!this.migrateNetwork(data.network)
+                };
+
+            } catch (e) {
+
+                return null;
+            }
+        },
+
+
         saveBestNetwork: function() {
 
             var store = this.storage();
@@ -910,6 +1012,190 @@
                 );
 
                 return null;
+            }
+        },
+
+
+        // ==========================================
+        // Archives
+        //
+        // "Start fresh" must never be a destructive act.
+        // The outgoing champion is copied aside before the
+        // new run is allowed to overwrite it, and can be
+        // put back from the console:
+        //
+        //   AITrainer.listArchives()
+        //   AITrainer.restoreArchive('mario_ai_archive_...')
+        //   location.reload()
+        // ==========================================
+
+        archiveBestNetwork: function() {
+
+            var store = this.storage();
+
+            if (!store) {
+                return null;
+            }
+
+            try {
+
+                var raw = store.getItem(this.storageKey);
+
+                // Nothing to lose.
+                if (!raw) {
+                    return null;
+                }
+
+                var key = this.archivePrefix + Date.now();
+
+                store.setItem(key, raw);
+
+                store.removeItem(this.storageKey);
+
+                var label = '';
+
+                try {
+                    var data = JSON.parse(raw);
+                    label =
+                        ' (gen ' + (data.generation || '?') +
+                        ', fitness ' + Math.floor(data.fitness || 0) + ')';
+                } catch (e) {
+                    // Label is decoration; the copy is what matters.
+                }
+
+                console.log(
+                    "Previous champion archived" + label + " as:\n  " + key +
+                    "\nRestore it with:\n" +
+                    "  AITrainer.restoreArchive('" + key + "'); location.reload();"
+                );
+
+                this.pruneArchives();
+
+                return key;
+
+            } catch (e) {
+
+                console.warn(
+                    "Could not archive the previous network:",
+                    e && e.message
+                );
+
+                return null;
+            }
+        },
+
+
+        // Newest first.
+        listArchives: function() {
+
+            var store = this.storage();
+
+            if (!store) {
+                return [];
+            }
+
+            var found = [];
+
+            try {
+
+                for (var i = 0; i < store.length; i++) {
+
+                    var key = store.key(i);
+
+                    if (key && key.indexOf(this.archivePrefix) === 0) {
+
+                        var entry = { key: key, savedAt: null, generation: null, fitness: null };
+
+                        try {
+
+                            var data = JSON.parse(store.getItem(key));
+
+                            entry.savedAt =
+                                data.timestamp ? new Date(data.timestamp) : null;
+                            entry.generation = data.generation;
+                            entry.fitness = data.fitness;
+
+                        } catch (e) {
+                            // Keep the key even if unreadable.
+                        }
+
+                        found.push(entry);
+                    }
+                }
+
+                found.sort(function(a, b) {
+
+                    var ta = parseInt(a.key.split('_').pop(), 10) || 0;
+                    var tb = parseInt(b.key.split('_').pop(), 10) || 0;
+
+                    return tb - ta;
+                });
+
+            } catch (e) {
+                // Best effort.
+            }
+
+            return found;
+        },
+
+
+        restoreArchive: function(key) {
+
+            var store = this.storage();
+
+            if (!store) {
+                return false;
+            }
+
+            var raw = store.getItem(key);
+
+            if (!raw) {
+
+                console.warn(
+                    "No archive under '" + key +
+                    "'. Use AITrainer.listArchives() to see what exists."
+                );
+
+                return false;
+            }
+
+            // The champion currently in place is itself
+            // worth keeping - swapping, not clobbering.
+            this.archiveBestNetwork();
+
+            store.setItem(this.storageKey, raw);
+
+            console.log(
+                "Restored " + key +
+                ". Reload the page and choose Resume to train from it."
+            );
+
+            return true;
+        },
+
+
+        pruneArchives: function() {
+
+            var store = this.storage();
+
+            if (!store) {
+                return;
+            }
+
+            try {
+
+                var keys = this.listArchives().map(function(a) {
+                    return a.key;
+                });
+
+                // listArchives is newest-first, so anything
+                // past the limit is the oldest.
+                while (keys.length > this.maxArchives) {
+                    store.removeItem(keys.pop());
+                }
+
+            } catch (e) {
+                // Pruning is best-effort.
             }
         },
 
