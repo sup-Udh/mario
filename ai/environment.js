@@ -1,31 +1,3 @@
-// ==================================================
-// MarioEnvironment
-//
-// The original game keeps its entire world in free
-// globals (player, level, vX, fireballs, ...) and every
-// entity class reads those globals directly - Goomba
-// reads `level`, Flag reads `ctx`, Pipe reads `player`,
-// and so on across ~50 sites in 13 files.
-//
-// Rather than rewrite every original Mario class to take
-// an environment argument, each environment OWNS a copy
-// of that global state and installs it into the globals
-// for the duration of its own tick:
-//
-//     env.activate()    globals now point at env's world
-//     ...game logic...  original code runs unmodified
-//     env.deactivate()  globals written back into env
-//
-// This is safe because JavaScript is single-threaded and
-// a tick is synchronous and non-reentrant, so no two
-// environments can ever be active at the same moment.
-//
-// The write-back half is not optional: the original code
-// REASSIGNS some of these globals (js/player.js:251
-// replaces `player` on death, js/levels/11.js:5 replaces
-// `level`), so after a tick the globals - not the fields
-// we installed - hold the truth.
-// ==================================================
 
 (function() {
 
@@ -201,6 +173,13 @@
         this.directionCooldown = 0;
 
         this.directionCooldownTime = 0;
+
+
+        // Question-block sensor reporting (see
+        // readQuestionBlockSensor).
+        this.lastQuestionBlock = null;
+        this._lastQBValue = null;
+        this._lastQBLogTime = 0;
 
 
         // How long Mario has been shoving into something
@@ -385,6 +364,12 @@
         this.pendingDirectionTime = 0;
         this.directionCooldown = 0;
 
+        this.lastQuestionBlock = null;
+
+        // _lastQBValue deliberately SURVIVES the reset, so a
+        // looping showcase does not re-log the same reading
+        // once per episode.
+
         this._pendingEnd = null;
 
         this.episode.start();
@@ -508,6 +493,82 @@
 
 
     // ----------------------------------------------
+    // Read (and optionally report) the question-block
+    // sensor.
+    //
+    // Called from think(), so the globals belong to THIS
+    // environment. Costs nothing unless console logging
+    // or the debug overlay is switched on.
+    // ----------------------------------------------
+
+    MarioEnvironment.prototype.readQuestionBlockSensor = function() {
+
+        var cfg = MarioSensors.questionBlockLog || {};
+
+        var wantLog =
+            !!cfg.enabled &&
+            (cfg.envId === null ||
+             cfg.envId === undefined ||
+             cfg.envId === this.id);
+
+        var wantDraw = !!MarioSensors.debugDraw;
+
+
+        // Purely diagnostic: the question block is NOT a
+        // network input, so this scan only runs when someone
+        // is actually looking.
+        if (!wantLog && !wantDraw) {
+            this.lastQuestionBlock = null;
+            return;
+        }
+
+        if (typeof MarioSensors.questionBlockDistance !== 'function' ||
+            typeof MarioSensors.isQuestionBlock !== 'function') {
+            this.lastQuestionBlock = null;
+            return;
+        }
+
+
+        var maxTiles = cfg.maxTiles || 10;
+
+        var distance =
+            MarioSensors.questionBlockDistance(maxTiles);
+
+        this.lastQuestionBlock = distance;
+
+
+        if (!wantLog) {
+            return;
+        }
+
+
+        // Only speak up when the reading actually moves.
+        if (distance === this._lastQBValue) {
+            return;
+        }
+
+        var now = Date.now();
+
+        if (now - this._lastQBLogTime < (cfg.minIntervalMs || 0)) {
+            return;
+        }
+
+        this._lastQBValue = distance;
+        this._lastQBLogTime = now;
+
+
+        console.log(
+            'Q-BLOCK  env ' + this.id +
+            '   marioTile ' +
+                Math.floor(scope.player.pos[0] / MarioSensors.TILE_SIZE) +
+            '   distance ' +
+                (distance >= maxTiles ? 'none' : distance + ' tiles') +
+            '   normalized ' + (distance / maxTiles).toFixed(2)
+        );
+    };
+
+
+    // ----------------------------------------------
     // Is Mario able to start a jump right now?
     //
     // Mirrors the real precondition in Player.jump()
@@ -591,6 +652,8 @@
                 enemy: MarioSensors.lastReadings.enemy
             };
         }
+
+        this.readQuestionBlockSensor();
 
         var outputs =
             NeuralNetwork.predict(this.network, sensors);

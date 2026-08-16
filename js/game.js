@@ -35,6 +35,46 @@ var dashboard = document.createElement("div");
 dashboard.id = "training-dashboard";
 document.body.appendChild(dashboard);
 
+// The readout's innerHTML is rebuilt as the numbers
+// change, so it gets its own element - the chart canvas
+// below must NOT live inside anything that is rewritten,
+// or it would be destroyed and recreated every frame.
+var dashReadout = document.createElement("div");
+dashReadout.id = "dash-readout";
+dashboard.appendChild(dashReadout);
+
+// --------------------------------------------------
+// Learning curve
+//
+// AITrainer computes a best/avg/record triple every
+// generation and then overwrites it. Buffered in
+// AITrainer.history and drawn here, that same data is
+// the clearest evidence on screen that the population
+// is actually improving rather than just moving.
+// --------------------------------------------------
+
+var chartWrap = document.createElement("div");
+chartWrap.id = "fitness-chart-wrap";
+
+var chartCanvas = document.createElement("canvas");
+chartCanvas.id = "fitness-chart";
+
+var chartLegend = document.createElement("div");
+chartLegend.id = "fitness-legend";
+chartLegend.innerHTML =
+  '<span class="k-record">record</span>' +
+  '<span class="k-best">gen best</span>' +
+  '<span class="k-avg">gen avg</span>';
+
+chartWrap.appendChild(chartCanvas);
+chartWrap.appendChild(chartLegend);
+dashboard.appendChild(chartWrap);
+
+var chartCtx = chartCanvas.getContext('2d');
+
+// Redraw only when there is something new to show.
+var lastChartLength = -1;
+
 // --------------------------------------------------
 // Showcase: the champion's own screen.
 // --------------------------------------------------
@@ -156,31 +196,93 @@ var sounds;
 var music;
 
 // --------------------------------------------------
-// Audio safety
+// Audio
 //
-// Browsers reject play() until the user has interacted
-// with the page, which surfaces as an unhandled
-// NotAllowedError rejection. During training that noise
-// is useless and must never be able to interrupt the
-// loop, so every Audio object gets its play() wrapped.
+// Two problems are solved here.
 //
-// Toggle from the console with:  AUDIO.enabled = true
+// 1. Browsers reject play() until the user has
+//    interacted with the page, which surfaces as an
+//    unhandled NotAllowedError rejection. Audio must
+//    never be able to interrupt the training loop.
+//
+// 2. Every clip is a SHARED Audio object played from
+//    inside entity code (`sounds.stomp.play()`,
+//    `music.overworld.pause()`). Entity code always runs
+//    inside some environment's activation window, so
+//    without scoping, eleven worlds fire the same twelve
+//    clips at once - and at 10x turbo that is not a
+//    soundtrack, it is a fault condition.
+//
+// So audio is scoped to whichever environment is
+// currently active, and only the showcase (which always
+// runs in real time) and a human-played environment are
+// allowed to be heard.
 // --------------------------------------------------
 
 var AUDIO = {
-  enabled: false
+
+  // Master switch. Safe to leave on now that sound is
+  // scoped to one environment.
+  enabled: true,
+
+  // Let the training grid make noise too. Off for a
+  // reason; flip it once to hear why.
+  allowTraining: false
 };
+
+
+function audioAllowed() {
+
+  if (!AUDIO.enabled) {
+    return false;
+  }
+
+  if (AUDIO.allowTraining) {
+    return true;
+  }
+
+  var active = MarioEnvironment.active;
+
+  // Outside any environment tick nobody owns the sound.
+  if (!active) {
+    return false;
+  }
+
+  // The champion's screen is the one viewport running at
+  // true speed, so it is the only one worth hearing.
+  if (AITrainer.showcase && active === AITrainer.showcase) {
+    return true;
+  }
+
+  // A human at the keyboard should hear their own game.
+  return !!active.manual;
+}
+
+
+// Writes to currentTime have to be intercepted as well,
+// not just play/pause: js/player.js zeroes
+// music.overworld on death, and training Marios die
+// several times a second, which would drag the
+// showcase's music back to the start over and over.
+var mediaCurrentTime =
+  (typeof HTMLMediaElement !== 'undefined') ?
+    Object.getOwnPropertyDescriptor(
+      HTMLMediaElement.prototype, 'currentTime') :
+    null;
+
 
 function makeAudioSafe(bank) {
 
   Object.keys(bank).forEach(function(name) {
 
     var clip = bank[name];
+
     var originalPlay = clip.play.bind(clip);
+    var originalPause = clip.pause.bind(clip);
 
     clip.play = function() {
 
-      if (!AUDIO.enabled) {
+      if (!audioAllowed()) {
         return;
       }
 
@@ -198,6 +300,37 @@ function makeAudioSafe(bank) {
         // Never let audio break the training loop.
       }
     };
+
+    clip.pause = function() {
+
+      if (!audioAllowed()) {
+        return;
+      }
+
+      try {
+        return originalPause();
+      } catch (e) {
+        // As above.
+      }
+    };
+
+    if (mediaCurrentTime && mediaCurrentTime.set) {
+
+      Object.defineProperty(clip, 'currentTime', {
+
+        configurable: true,
+
+        get: function() {
+          return mediaCurrentTime.get.call(this);
+        },
+
+        set: function(value) {
+          if (audioAllowed()) {
+            mediaCurrentTime.set.call(this, value);
+          }
+        }
+      });
+    }
   });
 }
 
@@ -267,35 +400,6 @@ function buildEnvironments() {
   environments = AITrainer.environments;
 }
 
-function resetGameForAI() {
-
-    console.log("================================");
-    console.log("AI RESET");
-    console.log("================================");
-
-    // Stop current AI input
-    input.setAI('LEFT', false);
-    input.setAI('RIGHT', false);
-    input.setAI('JUMP', false);
-    input.setAI('RUN', false);
-
-    // Reset camera
-    vX = 0;
-    vY = 0;
-
-    // Clear projectiles
-    fireballs.length = 0;
-
-    // Recreate level and Mario
-    Mario.oneone();
-
-    // Make sure the episode starts fresh
-    MarioEpisode.active = false;
-
-    console.log("AI RESET COMPLETE");
-}
-
-
 // --------------------------------------------------
 // Training speed control
 //
@@ -354,13 +458,13 @@ function setManualPlay(on) {
         MANUAL_ENV = null;
     }
 
+    // Audio follows the active environment now (see
+    // audioAllowed), so handing env 1 to the keyboard is
+    // enough - it starts being heard automatically.
     if (on) {
         MANUAL_ENV = environments[0];
         MANUAL_ENV.setManual(true);
         TRAINING.turbo = false;
-        AUDIO.enabled = true;
-    } else {
-        AUDIO.enabled = false;
     }
 }
 
@@ -829,11 +933,196 @@ function updateEnvHud(hud, env, isShowcase) {
 // Training dashboard (PART 26)
 // --------------------------------------------------
 
+// --------------------------------------------------
+// Fitness vs generation
+//
+// Three series, all in fitness units:
+//
+//   record   all-time best  (monotonic staircase)
+//   best     best of that generation
+//   avg      population mean - the one that shows
+//            whether the WHOLE population is learning
+//            or just one lucky lineage
+// --------------------------------------------------
+
+function renderFitnessChart() {
+
+  var history = AITrainer.history;
+
+  if (!history) {
+    return;
+  }
+
+
+  // Match the backing store to the CSS box, at device
+  // resolution - a canvas scaled by CSS alone renders
+  // blurry on any HiDPI display.
+  var dpr = window.devicePixelRatio || 1;
+
+  var cssWidth = chartCanvas.clientWidth || 560;
+  var cssHeight = chartCanvas.clientHeight || 110;
+
+  var needW = Math.round(cssWidth * dpr);
+  var needH = Math.round(cssHeight * dpr);
+
+  var resized =
+    (chartCanvas.width !== needW || chartCanvas.height !== needH);
+
+  if (resized) {
+    chartCanvas.width = needW;
+    chartCanvas.height = needH;
+  }
+
+  // Nothing new to draw, and the box hasn't moved.
+  if (!resized && history.length === lastChartLength) {
+    return;
+  }
+
+  lastChartLength = history.length;
+
+
+  var g = chartCtx;
+
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, cssWidth, cssHeight);
+
+
+  var padL = 34;
+  var padR = 6;
+  var padT = 8;
+  var padB = 14;
+
+  var plotW = cssWidth - padL - padR;
+  var plotH = cssHeight - padT - padB;
+
+  if (plotW <= 0 || plotH <= 0) {
+    return;
+  }
+
+
+  // The record is monotonic, so the last sample is the
+  // maximum of every series. Headroom keeps the newest
+  // point off the ceiling.
+  var yMax = 1;
+
+  if (history.length) {
+    yMax = Math.max(1, history[history.length - 1].record * 1.1);
+  }
+
+
+  function px(i) {
+    if (history.length <= 1) {
+      return padL;
+    }
+    return padL + (i / (history.length - 1)) * plotW;
+  }
+
+  function py(value) {
+    var v = (typeof value === 'number' && isFinite(value)) ? value : 0;
+    return padT + plotH - Math.min(1, v / yMax) * plotH;
+  }
+
+
+  // ------------------------------------------
+  // Gridlines + y labels
+  // ------------------------------------------
+
+  g.font = '9px monospace';
+  g.textBaseline = 'middle';
+
+  for (var t = 0; t <= 2; t++) {
+
+    var value = yMax * (t / 2);
+    var y = py(value);
+
+    g.strokeStyle = 'rgba(255,255,255,0.08)';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(padL, Math.round(y) + 0.5);
+    g.lineTo(padL + plotW, Math.round(y) + 0.5);
+    g.stroke();
+
+    g.fillStyle = 'rgba(255,255,255,0.4)';
+    g.textAlign = 'right';
+    g.fillText(String(Math.round(value)), padL - 5, y);
+  }
+
+
+  if (!history.length) {
+
+    g.fillStyle = 'rgba(255,255,255,0.35)';
+    g.textAlign = 'center';
+    g.fillText(
+      'waiting for generation 1...',
+      padL + plotW / 2,
+      padT + plotH / 2
+    );
+
+    return;
+  }
+
+
+  // ------------------------------------------
+  // Series
+  // ------------------------------------------
+
+  function line(key, color, width) {
+
+    g.strokeStyle = color;
+    g.lineWidth = width;
+    g.beginPath();
+
+    for (var i = 0; i < history.length; i++) {
+
+      var x = px(i);
+      var y = py(history[i][key]);
+
+      if (i === 0) {
+        g.moveTo(x, y);
+      } else {
+        g.lineTo(x, y);
+      }
+    }
+
+    g.stroke();
+  }
+
+  line('avg', '#ea4', 1);
+  line('best', '#4c8', 1);
+  line('record', '#7cf', 2);
+
+
+  // Mark the newest record so the eye lands on it.
+  var last = history[history.length - 1];
+
+  g.fillStyle = '#7cf';
+  g.beginPath();
+  g.arc(px(history.length - 1), py(last.record), 2.5, 0, Math.PI * 2);
+  g.fill();
+
+
+  // ------------------------------------------
+  // Generation range along the bottom
+  // ------------------------------------------
+
+  g.fillStyle = 'rgba(255,255,255,0.4)';
+  g.textBaseline = 'bottom';
+
+  g.textAlign = 'left';
+  g.fillText('gen ' + history[0].gen, padL, cssHeight - 2);
+
+  g.textAlign = 'right';
+  g.fillText('gen ' + last.gen, padL + plotW, cssHeight - 2);
+}
+
+
 function renderDashboard() {
 
   if (!dashboard || typeof AITrainer === 'undefined') {
     return;
   }
+
+  renderFitnessChart();
 
   var rows = environments.map(function(env) {
 
@@ -856,7 +1145,7 @@ function renderDashboard() {
       '<span>envs <b>' + environments.length + '</b></span>' +
     '</div>';
 
-  dashboard.innerHTML =
+  var html =
     perfRow +
     '<div class="dash-main">' +
       '<span>MASTER GENERATION: <b>' + AITrainer.generation + '</b></span>' +
@@ -867,6 +1156,14 @@ function renderDashboard() {
       '<span>MUTATION: <b>' + AITrainer.mutationAmount.toFixed(3) + '</b></span>' +
     '</div>' +
     '<div class="dash-envs">' + rows + '</div>';
+
+  // Reparsing this markup 60 times a second for eleven
+  // viewports is pure waste when nothing has changed -
+  // same dirty-check the per-viewport HUDs use.
+  if (dashReadout.__html !== html) {
+    dashReadout.innerHTML = html;
+    dashReadout.__html = html;
+  }
 }
 
 

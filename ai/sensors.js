@@ -2,42 +2,48 @@ var MarioSensors = {
 
     TILE_SIZE: 16,
 
-    // Draw the red obstacle-sensor ray on top of Mario.
-    //
-    // DEBUG MODE      : true  - see what the AI sees
-    // PRESENTATION    : false - clean gameplay
-    //
-    // Off by default so the showcase screen looks like
-    // the real game. Toggle from the training panel, or
-    // with MarioSensors.debugDraw = true in the console.
+  
     debugDraw: false,
 
-    // How many tiles ahead to scan for a gap. Wider than 1
-    // tile on purpose: jump is only legal while Mario is
-    // still standing (see Player.jump()'s `vel[1] > 0`
-    // guard), so by the time he's ON the tile right before
-    // a pit, gravity locks jump out again within a single
-    // frame. A short lookahead gave the network almost no
-    // window to react in - this gives it several tiles of
-    // runway instead.
-
+  
     GROUND_LOOKAHEAD_TILES: 3,
 
 
-    // --------------------------------------------------
-    // What the sensors saw on their most recent call.
-    //
-    // Filled in as a SIDE EFFECT of the real sensor
-    // functions, and only while debugDraw is on. The
-    // overlay renders from this, so it always shows the
-    // exact values the network was fed and never
-    // re-runs a sensor to draw it.
-    // --------------------------------------------------
+
 
     lastReadings: {
         obstacle: null,
         ground: null,
         enemy: null
+    },
+
+
+    // --------------------------------------------------
+    // Console reporting for the question-block sensor.
+    //
+    // Logging every frame would mean 60 lines per second
+    // per environment - eleven worlds is ~660/sec, which
+    // is heavy enough to cost real frame time. So this
+    // reports ONE environment, and only when the reading
+    // actually changes.
+    //
+    // Silence it:   MarioSensors.questionBlockLog.enabled = false
+    // Watch env 3:  MarioSensors.questionBlockLog.envId = 3
+    // Watch all:    MarioSensors.questionBlockLog.envId = null
+    // --------------------------------------------------
+
+    questionBlockLog: {
+
+        enabled: true,
+
+        // 'BEST' is the showcase environment. A number
+        // picks a training viewport; null reports all of
+        // them (noisy).
+        envId: 'BEST',
+
+        maxTiles: 10,
+
+        minIntervalMs: 120
     },
 
 
@@ -115,6 +121,83 @@ var MarioSensors = {
 
     },
 
+    // --------------------------------------------------
+    // Is this tile an UNUSED question block?
+    //
+    // Identity check against the level's own qblockSprite
+    // instance. It stays correct for free across the whole
+    // block lifecycle: putQBlock passes no bounceSprite, so
+    // a bonked Q-block swaps to usedSprite immediately, and
+    // js/block.js then converts it to a Floor in
+    // level.statics and deletes it from level.blocks.
+    // Either way it stops matching once it has been used.
+    // --------------------------------------------------
+
+    isQuestionBlock: function(tileX, tileY) {
+
+        if (!level || !level.blocks) {
+            return false;
+        }
+
+        if (
+            tileY < 0 ||
+            tileY >= level.blocks.length ||
+            tileX < 0
+        ) {
+            return false;
+        }
+
+        var row = level.blocks[tileY];
+
+        if (!row || !row[tileX]) {
+            return false;
+        }
+
+        var block = row[tileX];
+
+        return block.sprite === level.qblockSprite;
+    },
+
+
+  questionBlockDistance: function(maxTiles) {
+
+    if (!level || !player || !player.pos) {
+        return maxTiles;
+    }
+
+    var marioX = Math.floor(
+        player.pos[0] / this.TILE_SIZE
+    );
+
+    var marioY = Math.floor(
+        player.pos[1] / this.TILE_SIZE
+    );
+
+    for (
+        var distance = 1;
+        distance <= maxTiles;
+        distance++
+    ) {
+
+        var tileX = marioX + distance;
+
+        // Check several rows above Mario.
+        for (
+            var y = marioY - 1;
+            y >= marioY - 4;
+            y--
+        ) {
+
+            if (
+                this.isQuestionBlock(tileX, y)
+            ) {
+                return distance;
+            }
+        }
+    }
+
+    return maxTiles;
+},
     // enemy ditstance calculation:
 
 enemyDistance: function(maxTiles) {
@@ -432,7 +515,10 @@ enemyDistance: function(maxTiles) {
             velocityY: player.vel[1],
 
             obstacleDistance:
-                this.obstacleDistance(10)
+                this.obstacleDistance(10),
+
+        
+            
 
         });
     },
@@ -603,7 +689,7 @@ enemyDistance: function(maxTiles) {
         var o = env.lastOutputs || [0, 0, 0];
         var j = env.jumpDebug || {};
 
-        return [
+        var lines = [
             'obstacle ' + s[0].toFixed(2) +
                 '   ground ' + s[1],
             'enemy    ' + s[2].toFixed(2) +
@@ -617,6 +703,23 @@ enemyDistance: function(maxTiles) {
             'cooldown ' + (j.cooldown || 0).toFixed(2) +
                 '   grounded ' + (j.grounded ? 'YES' : 'NO')
         ];
+
+        // Not a network input yet - shown here so the
+        // sensor can be verified before it is wired in.
+        if (env.lastQuestionBlock !== null &&
+            env.lastQuestionBlock !== undefined) {
+
+            var maxTiles =
+                (this.questionBlockLog && this.questionBlockLog.maxTiles) || 10;
+
+            lines.push(
+                'qblock   ' +
+                (env.lastQuestionBlock >= maxTiles ?
+                    'none' : env.lastQuestionBlock + ' tiles')
+            );
+        }
+
+        return lines;
     }
 
 };

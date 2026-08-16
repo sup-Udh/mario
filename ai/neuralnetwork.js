@@ -271,8 +271,18 @@ var NeuralNetwork = {
 
             for (var i = 0; i < network.inputCount; i++) {
 
+                // A short input array (or a NaN sensor) would
+                // otherwise poison every hidden unit, every
+                // output, and silently make all networks
+                // identical - treat anything non-finite as 0.
+                var value = inputs[i];
+
+                if (typeof value !== 'number' || !isFinite(value)) {
+                    value = 0;
+                }
+
                 sum +=
-                    inputs[i] *
+                    value *
                     network.weightsInputHidden[i][h];
             }
 

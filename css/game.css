@@ -189,11 +189,59 @@ html, body {
    -------------------------------------------------- */
 
 #training-dashboard {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
   padding: 8px 12px;
   background: #1b1b26;
   border-bottom: 1px solid #2a2a3a;
   font-size: 12px;
 }
+
+/* The numbers flex; the chart keeps a stable width so the
+   curve doesn't reflow every time a stat changes width. */
+#dash-readout {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#fitness-chart-wrap {
+  flex: 0 0 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 16px;
+  border-left: 1px solid #2a2a3a;
+}
+
+#fitness-chart {
+  width: 100%;
+  height: 110px;
+  display: block;
+  background: #16161f;
+  border: 1px solid #2a2a3a;
+}
+
+#fitness-legend {
+  display: flex;
+  gap: 12px;
+  font-size: 10px;
+  color: #8a8aa0;
+}
+
+/* Colours must stay in step with renderFitnessChart(). */
+#fitness-legend span::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+#fitness-legend .k-record::before { background: #7cf; }
+#fitness-legend .k-best::before   { background: #4c8; }
+#fitness-legend .k-avg::before    { background: #ea4; }
 
 .dash-perf {
   display: flex;
@@ -244,6 +292,20 @@ html, body {
 @media (max-width: 1000px) {
   .dash-envs {
     grid-template-columns: repeat(5, 1fr);
+  }
+
+  /* Side by side stops fitting - stack, and let the
+     chart run the full width. */
+  #training-dashboard {
+    flex-direction: column;
+  }
+
+  #fitness-chart-wrap {
+    flex: 1 1 auto;
+    padding-left: 0;
+    padding-top: 8px;
+    border-left: none;
+    border-top: 1px solid #2a2a3a;
   }
 }
 

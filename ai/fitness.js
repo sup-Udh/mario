@@ -1,61 +1,73 @@
-var MarioFitness  = {
+// ==================================================
+// Fitness
+//
+// Distance is the backbone of the score, but distance
+// ALONE cannot tell these two runs apart:
+//
+//   A: reached x=2000 and was standing there, alive
+//   B: reached x=2000 and died on the next frame
+//
+// Under pure distance they tie, so evolution has no way
+// to prefer surviving. This adds the terms that break
+// that tie:
+//
+//   + enemyPassBonus  per enemy left behind
+//   + jumpBonus       per jump that actually cleared a pit
+//   - deathPenalty    once, if the episode ended in death
+//
+// ONE INSTANCE PER ENVIRONMENT. The bonus accumulator and
+// the passed-enemy set are episode state, and eleven
+// worlds tick interleaved - a shared singleton would let
+// environment 1's kills pay out on environment 7's score.
+// Same reasoning as MarioInput.create and
+// MarioEpisode.create.
+// ==================================================
 
-    // --------------------------------------------------
-    // Distance tracking (main reward)
-    // --------------------------------------------------
+(function() {
 
-    maxX: 0,
-
-
-    // --------------------------------------------------
-    // Reward tuning
-    // --------------------------------------------------
-
-    enemyPassBonus: 15,
-
-    jumpBonus: 5,
-
-    deathPenalty: 50,
-
-
-    // --------------------------------------------------
-    // Bonus/penalty accumulator, kept separate from
-    // maxX so MarioEpisode's stuck-detector (which
-    // reads maxX directly) only ever sees raw distance.
-    // --------------------------------------------------
-
-    bonus: 0,
-
-
-    // --------------------------------------------------
-    // Enemies already rewarded this episode, keyed by
-    // enemy.idx, so each enemy only pays out once.
-    // --------------------------------------------------
-
-    passedEnemies: null,
+    var scope =
+        (typeof window !== 'undefined') ? window : globalThis;
 
 
-    // --------------------------------------------------
-    // Was Mario's current time in the air the result
-    // of an actual jump (vs falling off a ledge)?
-    // --------------------------------------------------
+    function EnvironmentFitness(env) {
 
-    jumpedThisAirtime: false,
+        this.env = env;
 
 
-    // --------------------------------------------------
-    // Was there ground ahead the moment Mario left the
-    // ground this airtime? Captured at takeoff so it
-    // reflects what the network actually saw when it
-    // decided to jump (or not).
-    // --------------------------------------------------
+        // ------------------------------------------
+        // Bonuses and penalties ONLY.
+        //
+        // Distance is owned by the episode (which needs
+        // the raw value for its stuck detector, and shows
+        // it in the HUD as true distance). Keeping the two
+        // apart means neither can quietly corrupt the
+        // other.
+        // ------------------------------------------
 
-    groundAheadAtJump: true,
+        this.bonus = 0;
 
 
-    reset: function() {
+        // Enemies already paid out this episode, keyed by
+        // enemy.idx (assigned in js/goomba.js and
+        // js/koopa.js), so each one pays exactly once.
+        this.passedEnemies = {};
 
-        this.maxX = 0;
+
+        // Was this airtime the result of an actual jump,
+        // rather than walking off a ledge?
+        this.jumpedThisAirtime = false;
+
+
+        // What the ground-ahead sensor read at the moment
+        // Mario left the ground. Captured at takeoff, so it
+        // reflects what the network could actually see when
+        // it made the decision - not what happened to be
+        // under him when he landed.
+        this.groundAheadAtJump = true;
+    }
+
+
+    EnvironmentFitness.prototype.reset = function() {
 
         this.bonus = 0;
 
@@ -64,39 +76,38 @@ var MarioFitness  = {
         this.jumpedThisAirtime = false;
 
         this.groundAheadAtJump = true;
-    },
+    };
 
 
-    // --------------------------------------------------
-    // Update fitness
-    // --------------------------------------------------
+    // ----------------------------------------------
+    // Called once per tick from EnvironmentEpisode,
+    // which runs INSIDE this environment's activation
+    // window - so the globals below belong to us.
+    // ----------------------------------------------
 
-    update: function() {
+    EnvironmentFitness.prototype.update = function() {
+
+        var player = scope.player;
 
         if (!player || !player.pos) {
             return;
         }
 
-        var marioX = player.pos[0];
+        this.checkEnemiesPassed(player.pos[0]);
 
-        // Reward forward progress
-        if (marioX > this.maxX) {
-            this.maxX = marioX;
-        }
-
-        this.checkEnemiesPassed(marioX);
-
-        this.checkJump();
-    },
+        this.checkJump(player);
+    };
 
 
-    // --------------------------------------------------
-    // Small bonus for every enemy Mario gets past
-    // (stomped, dodged, or jumped over) - awarded once
-    // per enemy the first time it ends up behind him.
-    // --------------------------------------------------
+    // ----------------------------------------------
+    // Small reward for every enemy Mario gets past -
+    // stomped, dodged or jumped clean over - paid the
+    // first time it ends up behind him.
+    // ----------------------------------------------
 
-    checkEnemiesPassed: function(marioX) {
+    EnvironmentFitness.prototype.checkEnemiesPassed = function(marioX) {
+
+        var level = scope.level;
 
         if (!level || !level.enemies) {
             return;
@@ -118,35 +129,29 @@ var MarioFitness  = {
 
                 this.passedEnemies[enemy.idx] = true;
 
-                this.bonus += this.enemyPassBonus;
+                this.bonus += MarioFitness.enemyPassBonus;
             }
         }
-    },
+    };
 
 
-    // --------------------------------------------------
+    // ----------------------------------------------
     // Reward jumping specifically to clear a gap.
     //
-    // - Jumping while groundAhead is false, then landing
-    //   safely, is a real pit-clear -> rewarded.
-    // - Jumping while groundAhead is true (flat ground)
-    //   earns nothing - that jump wasn't needed.
-    // - Falling off a ledge without jumping earns
-    //   nothing, whether or not it was over a gap.
-    // --------------------------------------------------
+    // - Jumped while groundAhead was false, then landed
+    //   safely -> a real pit clear, rewarded.
+    // - Jumped over flat ground -> nothing, that jump
+    //   wasn't needed.
+    // - Fell off a ledge without jumping -> nothing,
+    //   gap or not.
+    // ----------------------------------------------
 
-    checkJump: function() {
-
-        if (!player) {
-            return;
-        }
+    EnvironmentFitness.prototype.checkJump = function(player) {
 
         if (player.jumping) {
 
             if (!this.jumpedThisAirtime) {
 
-                // First frame of this jump - record what
-                // the ground-ahead sensor read at takeoff.
                 this.groundAheadAtJump =
                     MarioSensors.groundAhead();
             }
@@ -160,44 +165,76 @@ var MarioFitness  = {
                 this.jumpedThisAirtime &&
                 !this.groundAheadAtJump
             ) {
-                this.bonus += this.jumpBonus;
+                this.bonus += MarioFitness.jumpBonus;
             }
 
             this.jumpedThisAirtime = false;
 
             this.groundAheadAtJump = true;
         }
-    },
+    };
 
 
-    // --------------------------------------------------
-    // Penalty applied once, by MarioEpisode, when an
-    // episode ends because Mario died.
-    // --------------------------------------------------
+    // ----------------------------------------------
+    // Applied once by the episode, when the run ended
+    // because Mario died.
+    // ----------------------------------------------
 
-    applyDeathPenalty: function() {
+    EnvironmentFitness.prototype.applyDeathPenalty = function() {
 
-        this.bonus -= this.deathPenalty;
-    },
+        this.bonus -= MarioFitness.deathPenalty;
+    };
 
 
-    // --------------------------------------------------
-    // Get current fitness
-    // --------------------------------------------------
+    // ----------------------------------------------
+    // Final score for a run of the given distance.
+    //
+    // Clamped at zero: fitness drives selection, and a
+    // death penalty must never push a network that got
+    // somewhere BELOW a network that never moved.
+    // ----------------------------------------------
 
-    getFitness: function() {
+    EnvironmentFitness.prototype.score = function(maxX) {
 
-        var total = this.maxX + this.bonus;
+        var total = maxX + this.bonus;
 
-        // Fitness drives selection - never let a death
-        // penalty push a network below a network that
-        // barely moved at all.
-        if (total < 0) {
+        if (!isFinite(total) || total < 0) {
             total = 0;
         }
 
         return total;
+    };
 
-    }
 
-}
+    // ----------------------------------------------
+    // Tunables live on the module, so they can be
+    // changed from the console mid-run and every
+    // environment picks the new value up immediately.
+    //
+    //   MarioFitness.deathPenalty = 200
+    // ----------------------------------------------
+
+    scope.MarioFitness = {
+
+        enemyPassBonus: 15,
+
+        jumpBonus: 5,
+
+        deathPenalty: 50,
+
+
+        // Bumped whenever any of the above changes the
+        // meaning of a score. A saved record from an older
+        // scoring rule is not comparable to a new one, and
+        // AITrainer uses this to avoid resuming behind an
+        // unreachable high score (see loadBestNetwork).
+        scoringVersion: 2,
+
+
+        create: function(env) {
+
+            return new EnvironmentFitness(env);
+        }
+    };
+
+})();

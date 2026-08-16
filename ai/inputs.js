@@ -39,6 +39,7 @@ var MarioInputs = {
             enemy = 10;
         }
 
+
         if (!Number.isFinite(velocityX)) {
             velocityX = 0;
         }
@@ -107,13 +108,16 @@ velocityY = Math.max(-1, Math.min(1, velocityY));
         // Return neural-network input vector
         // --------------------------------------------------
 
+        // Index order is load-bearing: environment.js think()
+        // reads [0], [1] and [2] by position for the jump
+        // gate. New inputs go on the END.
         return [
 
-            obstacle,
-            ground,
-            enemy,
-            velocityX,
-            velocityY
+            obstacle,     // 0
+            ground,       // 1
+            enemy,        // 2
+            velocityX,    // 3
+            velocityY     // 4
 
         ];
 

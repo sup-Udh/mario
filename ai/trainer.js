@@ -117,6 +117,25 @@
 
 
         // ------------------------------------------
+        // Learning curve
+        //
+        // One sample per generation, kept in memory and
+        // drawn as a sparkline in the dashboard. This is
+        // the only place the per-generation numbers
+        // survive at all - everything else on this object
+        // is overwritten by the next generation.
+        //
+        // Bounded because training runs for hours: at
+        // ~3 generations/second a session would otherwise
+        // accumulate a sample per frame forever.
+        // ------------------------------------------
+
+        history: [],
+
+        historyLimit: 600,
+
+
+        // ------------------------------------------
         // Persistence
         // ------------------------------------------
 
@@ -175,10 +194,23 @@
 
                 this.bestFitnessEver = saved.fitness || 0;
 
+                // Resume the decayed step size, not the
+                // initial one - see savePayload().
+                if (
+                    typeof saved.mutationAmount === 'number' &&
+                    isFinite(saved.mutationAmount)
+                ) {
+                    this.mutationAmount = Math.max(
+                        this.minMutationAmount,
+                        saved.mutationAmount
+                    );
+                }
+
                 console.log(
                     "Loaded master network.\n" +
                     "Generation: " + this.generation + "\n" +
-                    "Best fitness: " + Math.floor(this.bestFitnessEver)
+                    "Best fitness: " + Math.floor(this.bestFitnessEver) + "\n" +
+                    "Mutation amount: " + this.mutationAmount.toFixed(3)
                 );
 
             } else {
@@ -535,6 +567,24 @@
 
 
             // --------------------------------------
+            // Mutation step shrinks over time: coarse
+            // exploration early, fine tuning later, but
+            // never zero.
+            //
+            // Decayed BEFORE saving, not after, so the
+            // value written to storage is the one the next
+            // generation will actually use. Saving the
+            // pre-decay value would hand a resumed run a
+            // step size it had already grown out of.
+            // --------------------------------------
+
+            this.mutationAmount = Math.max(
+                this.minMutationAmount,
+                this.mutationAmount * this.mutationDecay
+            );
+
+
+            // --------------------------------------
             // Persistence
             // --------------------------------------
 
@@ -565,23 +615,35 @@
             }
 
 
+            // --------------------------------------
+            // Learning curve sample
+            //
+            // Recorded AFTER the record check above, so
+            // `record` is the all-time best as of this
+            // generation, and `gen` is the generation
+            // that was just scored.
+            // --------------------------------------
+
+            this.history.push({
+                gen: this.generation,
+                best: this.bestFitnessThisGen,
+                avg: this.averageFitness,
+                record: this.bestFitnessEver
+            });
+
+            // while, not if: the cap then holds even when
+            // historyLimit is lowered from the console
+            // mid-run.
+            while (this.history.length > this.historyLimit) {
+                this.history.shift();
+            }
+
+
             this.generation++;
 
             if (this.generation % this.generationsPerSave === 0) {
                 this.saveCheckpoint();
             }
-
-
-            // --------------------------------------
-            // Mutation step shrinks over time: coarse
-            // exploration early, fine tuning later, but
-            // never zero.
-            // --------------------------------------
-
-            this.mutationAmount = Math.max(
-                this.minMutationAmount,
-                this.mutationAmount * this.mutationDecay
-            );
 
 
             this.startGeneration();
@@ -591,6 +653,81 @@
         // ==========================================
         // Persistence
         // ==========================================
+
+        // ------------------------------------------
+        // Grow an older saved brain to fit a new input.
+        //
+        // Adding a sensor changes inputCount, which would
+        // otherwise make every saved network invalid and
+        // throw away all previous training. Instead we
+        // append one weight row for the new input,
+        // initialised to ZERO.
+        //
+        // Zero matters: the migrated network behaves
+        // EXACTLY as before, because the new input
+        // contributes nothing until mutation discovers a
+        // use for it. Nothing learned is lost, and the new
+        // sensor starts as a neutral option rather than as
+        // noise injected into a working brain.
+        //
+        // Returns the network, or null if it cannot be
+        // sensibly migrated.
+        // ------------------------------------------
+
+        migrateNetwork: function(network) {
+
+            if (!network || typeof network !== 'object') {
+                return null;
+            }
+
+            if (this.isValidNetwork(network)) {
+                return network;
+            }
+
+            var growable =
+                typeof network.inputCount === 'number' &&
+                network.inputCount < INPUT_COUNT &&
+                network.hiddenCount === HIDDEN_COUNT &&
+                network.outputCount === OUTPUT_COUNT &&
+                Array.isArray(network.weightsInputHidden) &&
+                network.weightsInputHidden.length === network.inputCount;
+
+            if (!growable) {
+                return null;
+            }
+
+            var added = 0;
+
+            while (network.weightsInputHidden.length < INPUT_COUNT) {
+
+                var row = [];
+
+                for (var h = 0; h < HIDDEN_COUNT; h++) {
+                    row.push(0);
+                }
+
+                network.weightsInputHidden.push(row);
+
+                added++;
+            }
+
+            var from = network.inputCount;
+
+            network.inputCount = INPUT_COUNT;
+
+            if (!this.isValidNetwork(network)) {
+                return null;
+            }
+
+            console.log(
+                "Migrated saved network from " + from + " to " +
+                INPUT_COUNT + " inputs (" + added +
+                " new weight row(s), zeroed - behaviour unchanged)."
+            );
+
+            return network;
+        },
+
 
         isValidNetwork: function(network) {
 
@@ -641,6 +778,34 @@
         },
 
 
+        // ------------------------------------------
+        // Everything needed to resume a run.
+        //
+        // mutationAmount is part of the state, not just a
+        // setting: it decays from 0.35 toward 0.02 over a
+        // long run, and resuming at the initial 0.35 would
+        // shake a finely-tuned champion with the coarse
+        // noise it had already grown out of.
+        //
+        // scoringVersion records WHICH fitness function
+        // produced `fitness`, so a record from an older
+        // scoring rule is never treated as a target the
+        // current rule has to beat (see loadBestNetwork).
+        // ------------------------------------------
+
+        savePayload: function() {
+
+            return {
+                network: this.masterNetwork,
+                fitness: this.bestFitnessEver,
+                generation: this.generation,
+                mutationAmount: this.mutationAmount,
+                scoringVersion: MarioFitness.scoringVersion,
+                timestamp: Date.now()
+            };
+        },
+
+
         saveBestNetwork: function() {
 
             var store = this.storage();
@@ -651,12 +816,10 @@
 
             try {
 
-                store.setItem(this.storageKey, JSON.stringify({
-                    network: this.masterNetwork,
-                    fitness: this.bestFitnessEver,
-                    generation: this.generation,
-                    timestamp: Date.now()
-                }));
+                store.setItem(
+                    this.storageKey,
+                    JSON.stringify(this.savePayload())
+                );
 
                 return true;
 
@@ -690,7 +853,12 @@
 
                 var data = JSON.parse(raw);
 
-                if (!data || !this.isValidNetwork(data.network)) {
+                // Try to grow an older brain onto the current
+                // input count before giving up on it.
+                var migrated =
+                    data ? this.migrateNetwork(data.network) : null;
+
+                if (!migrated) {
 
                     console.warn(
                         "Saved network is missing or has the wrong " +
@@ -698,6 +866,38 @@
                     );
 
                     return null;
+                }
+
+                data.network = migrated;
+
+
+                // A record scored under a DIFFERENT fitness
+                // function is not a record, it is a number
+                // from another game.
+                //
+                // This matters more than it sounds. The old
+                // scoring was pure distance; the current one
+                // subtracts a death penalty. Carrying the old
+                // figure over would leave the run chasing a
+                // high score the new rule may be unable to
+                // reach - and since networks are only saved
+                // when the record is beaten, NOTHING would
+                // ever be saved again.
+                //
+                // The brain is kept (it is still the best one
+                // we have); only its now-meaningless score is
+                // dropped, to be re-established on the first
+                // generation.
+                if (data.scoringVersion !== MarioFitness.scoringVersion) {
+
+                    console.warn(
+                        "Saved record was scored under fitness v" +
+                        (data.scoringVersion || 1) +
+                        ", current is v" + MarioFitness.scoringVersion +
+                        " - keeping the network, re-establishing its score."
+                    );
+
+                    data.fitness = 0;
                 }
 
                 return data;
@@ -726,12 +926,7 @@
 
                 store.setItem(
                     this.checkpointPrefix + this.generation,
-                    JSON.stringify({
-                        network: this.masterNetwork,
-                        fitness: this.bestFitnessEver,
-                        generation: this.generation,
-                        timestamp: Date.now()
-                    })
+                    JSON.stringify(this.savePayload())
                 );
 
                 console.log(
