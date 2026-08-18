@@ -28,9 +28,7 @@
         this.id = id;
 
 
-        // ------------------------------------------
-        // World state (the swapped globals)
-        // ------------------------------------------
+
 
         this.player = null;
         this.level = null;
